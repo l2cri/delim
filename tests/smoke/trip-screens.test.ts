@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import type { VueWrapper } from '@vue/test-utils'
 import { createNewTrip, parseTripState } from '../../src/core'
@@ -22,6 +22,13 @@ beforeEach(() => {
   vi.resetModules()
   localStorage.clear()
   window.location.hash = ''
+})
+
+afterEach(() => {
+  // «Закрываем вкладку»: колбэк beforeunload сбрасывает висящие дебаунсы автосейва
+  // прошлых сессий, чтобы их реальные таймеры не дописали свой стейт в хранилище
+  // посреди следующего теста (флейк «после перезагрузки…»).
+  window.dispatchEvent(new Event('beforeunload'))
 })
 
 describe('создание поездки', () => {
