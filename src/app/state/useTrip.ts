@@ -1,7 +1,14 @@
 import { ref, watch } from 'vue'
 import type { Ref } from 'vue'
 import { createNewTrip, parseTripState, TRIP_LIMITS } from '../../core'
-import type { Expense, Participant, Split, TripParseError, TripState } from '../../core'
+import type {
+  Expense,
+  Participant,
+  Rational,
+  Split,
+  TripParseError,
+  TripState,
+} from '../../core'
 import { PALETTE_COLORS, PALETTE_EMOJI, pickLeastUsed, pickLeastUsedRandom } from './palette'
 import { clearStoredTrip, readStoredTrip, writeStoredTrip } from './storage'
 import { isBlank, splitDelta } from './validation'
@@ -54,6 +61,25 @@ export type SaveExpenseResult =
   | { ok: false; reason: 'not-found' } // только updateExpense
 
 export type RemoveExpenseResult = { ok: true } | { ok: false; reason: 'not-found' }
+
+export type AddCurrencyResult =
+  | { ok: true }
+  | { ok: false; reason: 'empty-code' }
+  | { ok: false; reason: 'duplicate'; code: string }
+  | { ok: false; reason: 'limit'; max: number }
+  | { ok: false; reason: 'bad-rate' }
+
+export type UpdateCurrencyRateResult =
+  | { ok: true }
+  | { ok: false; reason: 'not-found'; code: string }
+  | { ok: false; reason: 'base-currency'; code: string }
+  | { ok: false; reason: 'bad-rate' }
+
+export type RemoveCurrencyResult =
+  | { ok: true }
+  | { ok: false; reason: 'not-found'; code: string }
+  | { ok: false; reason: 'base-currency'; code: string }
+  | { ok: false; reason: 'in-use'; expenses: number; payments: number }
 
 // Стейт живёт на уровне модуля: все вызовы useTrip() внутри приложения смотрят
 // на одни и те же refs — один способ хранения, один автосейв.
@@ -254,6 +280,63 @@ function removeExpense(id: string): RemoveExpenseResult {
   return { ok: true }
 }
 
+/** Курс — положительные безопасные целые пары, контракт Rational схемы; в рантайме
+ * прийти может любое (UI присылает результат parseRate, но мутация защищает схему
+ * сама — как expenseInputError защищает расход). */
+function isSafeRate(rate: Rational): boolean {
+  return (
+    Number.isInteger(rate.num) &&
+    rate.num > 0 &&
+    rate.num <= Number.MAX_SAFE_INTEGER &&
+    Number.isInteger(rate.den) &&
+    rate.den > 0 &&
+    rate.den <= Number.MAX_SAFE_INTEGER
+  )
+}
+
+function addCurrency(code: string, rate: Rational): AddCurrencyResult {
+  if (isBlank(code)) return { ok: false, reason: 'empty-code' }
+  const trimmed = code.trim()
+  const current = requireTrip()
+  if (current.currencies.some((c) => c.code === trimmed)) {
+    return { ok: false, reason: 'duplicate', code: trimmed }
+  }
+  if (current.currencies.length >= TRIP_LIMITS.currencies) {
+    return { ok: false, reason: 'limit', max: TRIP_LIMITS.currencies }
+  }
+  if (!isSafeRate(rate)) return { ok: false, reason: 'bad-rate' }
+  current.currencies.push({ code: trimmed, rate })
+  return { ok: true }
+}
+
+function updateCurrencyRate(code: string, rate: Rational): UpdateCurrencyRateResult {
+  const current = requireTrip()
+  const target = current.currencies.find((c) => c.code === code)
+  if (!target) return { ok: false, reason: 'not-found', code }
+  if (code === current.baseCurrency) return { ok: false, reason: 'base-currency', code }
+  if (!isSafeRate(rate)) return { ok: false, reason: 'bad-rate' }
+  // Живое значение (ADR 0005): расходов и балансов не касается — они читают курс
+  // из стейта при каждом вычислении, пересчёт задним числом происходит сам.
+  target.rate = rate
+  return { ok: true }
+}
+
+function removeCurrency(code: string): RemoveCurrencyResult {
+  const current = requireTrip()
+  if (!current.currencies.some((c) => c.code === code)) {
+    return { ok: false, reason: 'not-found', code }
+  }
+  // Базовая валюта неприкосновенна: схема требует её ровно один раз с курсом 1/1.
+  if (code === current.baseCurrency) return { ok: false, reason: 'base-currency', code }
+  const expenses = current.expenses.filter((e) => e.currencyCode === code).length
+  const payments = current.payments.filter((p) => p.currencyCode === code).length
+  if (expenses > 0 || payments > 0) {
+    return { ok: false, reason: 'in-use', expenses, payments }
+  }
+  current.currencies = current.currencies.filter((c) => c.code !== code)
+  return { ok: true }
+}
+
 function regenerateAvatar(id: string): void {
   const current = requireTrip()
   const participant = current.participants.find((p) => p.id === id)
@@ -287,6 +370,9 @@ export function useTrip(): {
   addExpense(input: ExpenseInput): SaveExpenseResult
   updateExpense(id: string, input: ExpenseInput): SaveExpenseResult
   removeExpense(id: string): RemoveExpenseResult
+  addCurrency(code: string, rate: Rational): AddCurrencyResult
+  updateCurrencyRate(code: string, rate: Rational): UpdateCurrencyRateResult
+  removeCurrency(code: string): RemoveCurrencyResult
   regenerateAvatar(id: string): void
   discardCorrupted(): void
 } {
@@ -300,6 +386,9 @@ export function useTrip(): {
     addExpense,
     updateExpense,
     removeExpense,
+    addCurrency,
+    updateCurrencyRate,
+    removeCurrency,
     regenerateAvatar,
     discardCorrupted,
   }
