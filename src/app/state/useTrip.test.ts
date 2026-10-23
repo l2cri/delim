@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { computeBalances, createNewTrip, parseTripState } from '../../core'
+import { computeBalances, createNewTrip, parseTripState, settle } from '../../core'
 import type { TripState } from '../../core'
 import { PALETTE_COLORS, PALETTE_EMOJI } from './palette'
 import { STORAGE_KEY } from './storage'
@@ -952,8 +952,8 @@ describe('валюты: удаление', () => {
   })
 })
 
-describe('правка курса пересчитывает балансы задним числом', () => {
-  it('курс EUR 3/1 → 4/1 меняет балансы расходов в евро', async () => {
+describe('правка курса пересчитывает балансы и переводы задним числом', () => {
+  it('курс EUR 3/1 → 4/1 меняет балансы и сведение расходов в евро', async () => {
     const { t, anya, borya } = await loadTripWithEuro()
     const added = t.addExpense({
       title: 'Ужин',
@@ -971,6 +971,7 @@ describe('правка курса пересчитывает балансы за
       { participantId: anya, amount: 150 },
       { participantId: borya, amount: -150 },
     ])
+    expect(settle(before)).toEqual([{ fromId: borya, toId: anya, amount: 150 }])
 
     expect(t.updateCurrencyRate('EUR', { num: 4, den: 1 })).toEqual({ ok: true })
 
@@ -980,6 +981,7 @@ describe('правка курса пересчитывает балансы за
       { participantId: anya, amount: 200 },
       { participantId: borya, amount: -200 },
     ])
+    expect(settle(after)).toEqual([{ fromId: borya, toId: anya, amount: 200 }])
   })
 })
 

@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import type { Currency, Rational } from '../../core'
 import { parseRate, TRIP_LIMITS } from '../../core'
+import { isBlank } from '../state/validation'
 import { CURRENCY_SYMBOLS, PRESET_CURRENCIES } from './currencies'
 import { formatRate } from './format'
 
@@ -46,7 +47,8 @@ const addRateDraft = ref('')
 const addRate = computed(() => parseRate(addRateDraft.value))
 const addRateInvalid = computed(() => addRateDraft.value.trim() !== '' && !addRate.value.ok)
 
-const canAdd = computed(() => codeDraft.value.trim() !== '' && addRate.value.ok)
+// Правило пустоты кода — из стейта (validation.ts), то же, что отказывает в addCurrency.
+const canAdd = computed(() => !isBlank(codeDraft.value) && addRate.value.ok)
 
 watch(
   () => props.adding,
