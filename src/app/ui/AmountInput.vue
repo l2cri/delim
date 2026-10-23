@@ -8,6 +8,8 @@ const props = defineProps<{
   modelValue: number | null
   placeholder?: string
   disabled?: boolean
+  /** Без строки предпросмотра под полем — для плотных рядов (суммы долей точного сплита). */
+  compact?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -76,6 +78,12 @@ watch(
       "
       @input="onInput"
     />
-    <p aria-live="polite" class="mt-1.5 text-sm text-zinc-500 dark:text-zinc-400">{{ preview }}</p>
+    <p
+      v-if="!compact"
+      aria-live="polite"
+      class="mt-1.5 text-sm text-zinc-500 dark:text-zinc-400"
+    >
+      {{ preview }}
+    </p>
   </div>
 </template>
