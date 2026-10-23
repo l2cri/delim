@@ -8,6 +8,7 @@ import {
   type AddParticipantResult,
   type RemoveParticipantResult,
 } from '../state/useTrip'
+import { isBlank } from '../state/validation'
 
 // Экран поездки без бизнес-логики: все правила (лимит, занятость, палитры) —
 // в useTrip; здесь только вызовы мутаций и человекочитаемые сообщения об отказах.
@@ -26,9 +27,10 @@ const renameDraft = ref('')
 type Notice = { tone: 'error' | 'info'; text: string }
 const notice = ref<Notice | null>(null)
 
-// Кнопка активна при непустом имени: отказ по лимиту приходит сообщением из
-// мутации, а не молчаливой блокировкой — лимит объяснён в UI.
-const canAdd = computed(() => nameDraft.value.trim() !== '')
+// Кнопка активна при непустом имени (правило — из стейта, то же, что в addParticipant):
+// отказ по лимиту приходит сообщением из мутации, а не молчаливой блокировкой —
+// лимит объяснён в UI.
+const canAdd = computed(() => !isBlank(nameDraft.value))
 
 function showNotice(tone: Notice['tone'], text: string): void {
   notice.value = { tone, text }

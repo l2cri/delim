@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { useTrip } from '../state/useTrip'
 import type { CreateTripResult } from '../state/useTrip'
+import { isBlank } from '../state/validation'
 
 // Пресет популярных валют поездок (спека, Further Notes); произвольный код —
 // вручную. Валюта здесь только выбирается: все деньги считает ядро.
@@ -39,7 +40,8 @@ const currency = ref('')
 const customDraft = ref('')
 const error = ref('')
 
-const canCreate = computed(() => name.value.trim() !== '' && currency.value !== '')
+// Правило пустоты — из стейта (validation.ts), то же, что отказывает в createTrip.
+const canCreate = computed(() => !isBlank(name.value) && !isBlank(currency.value))
 
 function selectPreset(code: string): void {
   currency.value = code
@@ -56,6 +58,9 @@ function applyCustom(): void {
 }
 
 function submit(): void {
+  // Сначала коммитим черновик своей валюты: Enter в названии создаёт поездку
+  // сразу после ввода кода, без блура поля валюты.
+  applyCustom()
   const result: CreateTripResult = createTrip({
     name: name.value,
     baseCurrency: currency.value,
@@ -108,6 +113,7 @@ function submit(): void {
             autocomplete="off"
             placeholder="Например, Грузия-2026"
             class="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-base text-zinc-900 outline-none transition-colors placeholder:text-zinc-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500"
+            @keyup.enter="submit"
           />
         </div>
 
@@ -140,6 +146,7 @@ function submit(): void {
               maxlength="5"
               class="w-36 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm uppercase text-zinc-900 outline-none transition-colors placeholder:normal-case placeholder:text-zinc-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
               @change="applyCustom"
+              @keyup.enter="applyCustom"
             />
             <span v-if="currency && !PRESET_CURRENCIES.includes(currency)" class="text-sm text-emerald-600 dark:text-emerald-400">
               Выбрано: {{ currency }}

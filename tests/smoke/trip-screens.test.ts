@@ -3,24 +3,19 @@ import { mount } from '@vue/test-utils'
 import type { VueWrapper } from '@vue/test-utils'
 import { createNewTrip, parseTripState } from '../../src/core'
 import type { TripState } from '../../src/core'
+import { STORAGE_KEY } from '../../src/app/state/storage'
+import { flushWatchers as flush } from '../helpers/flushWatchers'
 
-const STORAGE_KEY = 'delim:active-trip'
 const ISO = '2026-10-01T10:00:00.000Z'
 
 /**
  * Дымовые тесты экранов создания поездки и участников (qa-acceptance):
-// гоняют только то, что видит пользователь, через корневой App. Синглтоны стейта
-// сбрасываются реестром модулей: каждый тест — «чистая сессия» приложения.
+ * гоняют только то, что видит пользователь, через корневой App. Синглтоны стейта
+ * сбрасываются реестром модулей: каждый тест — «чистая сессия» приложения.
  */
 async function mountApp(): Promise<VueWrapper> {
   const { default: App } = await import('../../src/App.vue')
   return mount(App)
-}
-
-/** Слив микрозадач Vue: реактивность экранов обновляется микрозадачами. */
-async function flush(): Promise<void> {
-  await Promise.resolve()
-  await Promise.resolve()
 }
 
 beforeEach(() => {
@@ -60,6 +55,17 @@ describe('создание поездки', () => {
 
     await wrapper.find('#trip-name').setValue('Кипр')
     expect(create.attributes('disabled')).toBeDefined()
+  })
+
+  it('Enter в названии создаёт поездку, коммитя черновик своей валюты без блура', async () => {
+    const wrapper = await mountApp()
+
+    await wrapper.find('#trip-name').setValue('Кипр')
+    await wrapper.find('input[placeholder="Своя валюта, код"]').setValue('amd')
+    await wrapper.find('#trip-name').trigger('keyup.enter')
+    await flush()
+
+    expect(wrapper.text()).toContain('Базовая валюта: AMD')
   })
 })
 
