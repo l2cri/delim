@@ -123,12 +123,12 @@ describe('операция «балансы» (гроссбух)', () => {
           split: { mode: 'equal', participantIds: ['p1', 'p2', 'p3'] },
         }),
       )
-      // 100000 × 913/10 = 91300 мин.ед.; квоты 30433⅓ → 30434 + 30433 + 30433 = 91300
+      // 100000 × 913/10 = 9 130 000 мин.ед.; квоты 3 043 333⅓ → 3043334 + 3043333 + 3043333
       const balances = byId(computeBalances(state))
-      expect(balances.get('p4')).toBe(91300)
-      expect(balances.get('p1')).toBe(-30434)
-      expect(balances.get('p2')).toBe(-30433)
-      expect(balances.get('p3')).toBe(-30433)
+      expect(balances.get('p4')).toBe(9130000)
+      expect(balances.get('p1')).toBe(-3043334)
+      expect(balances.get('p2')).toBe(-3043333)
+      expect(balances.get('p3')).toBe(-3043333)
       expectZeroSum(computeBalances(state))
     })
 
@@ -169,15 +169,15 @@ describe('операция «балансы» (гроссбух)', () => {
         }),
       )
       const before = byId(computeBalances(state))
-      expect(before.get('p1')).toBe(45650)
-      expect(before.get('p2')).toBe(-45650)
+      expect(before.get('p1')).toBe(456500)
+      expect(before.get('p2')).toBe(-456500)
 
       const usd = state.currencies.find((c) => c.code === 'USD')!
       usd.rate = { num: 92, den: 1 }
 
       const after = byId(computeBalances(state))
-      expect(after.get('p1')).toBe(46000)
-      expect(after.get('p2')).toBe(-46000)
+      expect(after.get('p1')).toBe(460000)
+      expect(after.get('p2')).toBe(-460000)
       expectZeroSum(computeBalances(state))
     })
   })
@@ -202,22 +202,22 @@ describe('операция «балансы» (гроссбух)', () => {
       state.expenses.push(
         makeExpense({
           payerId: 'p4',
-          amount: 20100, // 201,00 USD → 18351,3 мин.ед. → 18351
+          amount: 20101, // 201,01 USD → 1 835 221,3 мин.ед. → 1 835 221
           currencyCode: 'USD',
           split: {
             mode: 'exact',
             shares: [
-              { participantId: 'p1', amount: 10000 }, // 100 USD → ровно 9130
-              { participantId: 'p2', amount: 10100 }, // 101 USD → 9221,3 → 9221
+              { participantId: 'p1', amount: 10000 }, // 100 USD → ровно 913 000
+              { participantId: 'p2', amount: 10101 }, // 101,01 USD → 922 221,3 → 922 221
             ],
           },
         }),
       )
       const balances = byId(computeBalances(state))
-      expect(balances.get('p1')).toBe(-3000 - 9130)
-      expect(balances.get('p2')).toBe(10000 - 3000 - 9221)
+      expect(balances.get('p1')).toBe(-3000 - 913000)
+      expect(balances.get('p2')).toBe(10000 - 3000 - 922221)
       expect(balances.get('p3')).toBe(-4000)
-      expect(balances.get('p4')).toBe(18351)
+      expect(balances.get('p4')).toBe(1835221)
       expectZeroSum(computeBalances(state))
     })
 
@@ -285,13 +285,13 @@ describe('операция «балансы» (гроссбух)', () => {
         amount: 10000,
         currencyCode: 'USD',
       })
-      expect(byId(computeBalances(state)).get('p1')).toBe(-91300)
-      expect(byId(computeBalances(state)).get('p2')).toBe(91300)
+      expect(byId(computeBalances(state)).get('p1')).toBe(-913000)
+      expect(byId(computeBalances(state)).get('p2')).toBe(913000)
 
       const usd = state.currencies.find((c) => c.code === 'USD')!
       usd.rate = { num: 92, den: 1 }
-      expect(byId(computeBalances(state)).get('p1')).toBe(-92000)
-      expect(byId(computeBalances(state)).get('p2')).toBe(92000)
+      expect(byId(computeBalances(state)).get('p1')).toBe(-920000)
+      expect(byId(computeBalances(state)).get('p2')).toBe(920000)
       expectZeroSum(computeBalances(state))
     })
   })
