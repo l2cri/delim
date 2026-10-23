@@ -1,17 +1,21 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import type { Expense, Participant } from '../../core'
+import type { Expense, Participant, Rational } from '../../core'
 import { TRIP_LIMITS } from '../../core'
 import { plural } from './format'
+import CurrenciesCard from './CurrenciesCard.vue'
 import ExpensesCard from './ExpensesCard.vue'
 import type { ExpenseEditor } from './ExpensesCard.vue'
 import SettlementCard from './SettlementCard.vue'
 import {
   useTrip,
+  type AddCurrencyResult,
   type AddParticipantResult,
   type ExpenseInput,
+  type RemoveCurrencyResult,
   type RemoveParticipantResult,
   type SaveExpenseResult,
+  type UpdateCurrencyRateResult,
 } from '../state/useTrip'
 import { isBlank } from '../state/validation'
 
@@ -27,6 +31,9 @@ const {
   addExpense,
   updateExpense,
   removeExpense,
+  addCurrency,
+  updateCurrencyRate,
+  removeCurrency,
 } = useTrip()
 
 const participants = computed(() => trip.value?.participants ?? [])
@@ -181,6 +188,84 @@ function removeExpenseFromList(expense: Expense): void {
     notice.value = null
   } else {
     showNotice('error', 'Расход уже удалён')
+  }
+}
+
+// Валюты: форма добавления открыта или нет — владеет экран, как редактором расходов.
+const currencyAdding = ref(false)
+
+function describeAddCurrencyRefusal(result: Extract<AddCurrencyResult, { ok: false }>): string {
+  switch (result.reason) {
+    case 'empty-code':
+      return 'Введите код валюты'
+    case 'duplicate':
+      return `«${result.code}» уже в поездке`
+    case 'limit':
+      return `Лимит поездки — ${result.max} валют, больше не добавить`
+    case 'bad-rate':
+      return 'Введите курс — положительную десятичную дробь'
+  }
+}
+
+function addCurrencyIntent(code: string, rate: Rational): void {
+  const result = addCurrency(code, rate)
+  if (result.ok) {
+    // Отказ при закрытой форме сбросил бы черновик на середине ввода.
+    currencyAdding.value = false
+    notice.value = null
+  } else {
+    showNotice('error', describeAddCurrencyRefusal(result))
+  }
+}
+
+function describeRateRefusal(result: Extract<UpdateCurrencyRateResult, { ok: false }>): string {
+  switch (result.reason) {
+    case 'not-found':
+      return 'Валюта уже удалена'
+    case 'base-currency':
+      return 'Базовая валюта всегда с курсом 1'
+    case 'bad-rate':
+      return 'Введите курс — положительную десятичную дробь'
+  }
+}
+
+function updateRateIntent(code: string, rate: Rational): void {
+  const result = updateCurrencyRate(code, rate)
+  if (result.ok) {
+    notice.value = null
+  } else {
+    showNotice('error', describeRateRefusal(result))
+  }
+}
+
+function describeRemoveCurrencyRefusal(
+  code: string,
+  result: Extract<RemoveCurrencyResult, { ok: false }>,
+): string {
+  if (result.reason === 'not-found') return 'Валюта уже удалена'
+  if (result.reason === 'base-currency') {
+    return `«${code}» — базовая валюта поездки, её нельзя удалить`
+  }
+  const parts: string[] = []
+  if (result.expenses > 0) {
+    parts.push(
+      `в ${result.expenses} ${plural(result.expenses, 'расходе', 'расходах', 'расходах')}`,
+    )
+  }
+  if (result.payments > 0) {
+    parts.push(
+      `в ${result.payments} ${plural(result.payments, 'выплате', 'выплатах', 'выплатах')}`,
+    )
+  }
+  return `Нельзя удалить «${code}»: валюта фигурирует ${parts.join(' и ')}`
+}
+
+function removeCurrencyIntent(code: string): void {
+  const result = removeCurrency(code)
+  if (result.ok) {
+    notice.value = null
+  } else {
+    showNotice('error', describeRemoveCurrencyRefusal(code, result))
   }
 }
 </script>
@@ -339,6 +424,17 @@ function removeExpenseFromList(expense: Expense): void {
         @cancel="cancelExpense"
       />
 
+      <CurrenciesCard
+        :currencies="trip.currencies"
+        :base-currency="trip.baseCurrency"
+        :adding="currencyAdding"
+        @open="currencyAdding = true; notice = null"
+        @add="addCurrencyIntent"
+        @update-rate="updateRateIntent"
+        @remove="removeCurrencyIntent"
+        @cancel="currencyAdding = false; notice = null"
+      />
+
       <SettlementCard :trip="trip" />
 
       <p
@@ -358,7 +454,8 @@ function removeExpenseFromList(expense: Expense): void {
         class="rounded-2xl border border-dashed border-zinc-300 p-5 text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400"
         aria-label="Что дальше"
       >
-        Дальше — курсы валют и выплаты. Эти разделы появятся в следующих обновлениях.
+        Дальше — выплаты, граф долгов и квитанция. Эти разделы появятся в
+        следующих обновлениях.
       </section>
     </main>
 

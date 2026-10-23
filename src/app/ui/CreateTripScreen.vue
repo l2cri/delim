@@ -3,34 +3,10 @@ import { computed, ref } from 'vue'
 import { useTrip } from '../state/useTrip'
 import type { CreateTripResult } from '../state/useTrip'
 import { isBlank } from '../state/validation'
+import { CURRENCY_SYMBOLS, PRESET_CURRENCIES } from './currencies'
 
-// Пресет популярных валют поездок (спека, Further Notes); произвольный код —
-// вручную. Валюта здесь только выбирается: все деньги считает ядро.
-const PRESET_CURRENCIES: readonly string[] = [
-  'RUB',
-  'USD',
-  'EUR',
-  'GBP',
-  'KZT',
-  'TRY',
-  'AED',
-  'THB',
-  'GEL',
-  'CNY',
-]
-
-const SYMBOLS: Record<string, string> = {
-  RUB: '₽',
-  USD: '$',
-  EUR: '€',
-  GBP: '£',
-  KZT: '₸',
-  TRY: '₺',
-  AED: 'AED',
-  THB: '฿',
-  GEL: '₾',
-  CNY: '¥',
-}
+// Пресет популярных валют — общий с настройками поездки (./currencies); произвольный
+// код — вручную. Валюта здесь только выбирается: все деньги считает ядро.
 
 const { createTrip } = useTrip()
 
@@ -133,7 +109,7 @@ function submit(): void {
               :aria-pressed="currency === code"
               @click="selectPreset(code)"
             >
-              {{ SYMBOLS[code] ?? code }}
+              {{ CURRENCY_SYMBOLS[code] ?? code }}
               <span class="ml-1 text-xs opacity-70">{{ code }}</span>
             </button>
           </div>

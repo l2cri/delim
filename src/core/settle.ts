@@ -1,26 +1,39 @@
 // Сведение — операция ядра «settle»: балансы → список переводов «кто→кому
-// сколько», погашающий все балансы. Первый слой гибрида из ADR 0006: жадный
-// алгоритм — максимальный должник гасится максимальным кредитором; точный
-// bitset-поиск для ≤ 12 участников подключается внутри этой же операции
-// (тикет 07), наружу выбор solver-а не течёт. Переводы — производная величина,
-// а не хранимое состояние (ADR 0010): сечение пересчитывается на каждом вызове.
+// сколько», погашающий все балансы. Гибрид из ADR 0006; оба solver-а —
+// приватный шов ./internal (settle-greedy, settle-exact), выбор скрыт внутри
+// операции, наружу не течёт:
+// - жадный слой: максимальный должник гасится максимальным кредитором;
+// - точный слой при ≤ 12 ненулевых (2^12 масок): bitset-поиск минимального
+//   числа переводов как n − максимальное число нулевых по сумме групп
+//   разбиения, внутри группы — тот же жадный обход.
+// При ≤ 12 ненулевых запускаются оба и берётся меньший результат, при
+// равенстве — жадный (стабильность поведения на простых профилях); при > 12 —
+// только жадный. Переводы — производная величина, а не хранимое состояние
+// (ADR 0010): сведение пересчитывается на каждом вызове.
 //
 // Контракт:
-// - не более n−1 переводов, где n — участники с ненулевым балансом: каждый
-//   перевод обнуляет хотя бы одну сторону пары «должник/кредитор»;
+// - не более n−1 переводов, где n — участники с ненулевым балансом: жадный
+//   обход обнуляет хотя бы одну сторону пары «должник/кредитор» каждым
+//   переводом, а при ≤ 12 ненулевых число переводов минимально (точный слой);
 // - суммы точные, целые минорные единицы базовой валюты; применение переводов
 //   к балансам даёт ноль у каждого;
 // - каждый перевод строго положителен; нулевые балансы не участвуют;
-// - детерминированность: тай-брейк сортировок — по убыванию модуля баланса,
-//   при равенстве — порядок в списке балансов (он же порядок участников).
+// - детерминированность: жадный — сортировка по убыванию модуля баланса, при
+//   равенстве — порядок в списке балансов (он же порядок участников); точный —
+//   группы по возрастанию первого участника, при равном итоге — меньшая
+//   группа, затем меньшая битовая маска (раньше по списку); внутри группы и
+//   порядок переводов — жадный обход.
 //
 // Предусловие (доверенный вход — выход computeBalances): суммы — безопасные
 // целые, Σ балансов ровно ноль. Повторной валидации нет, как и в остальном
 // ядре. Арифметика — number: только сложение/вычитание безопасных целых,
-// промежуточные значения не выходят за модули входа, точность не теряется.
+// промежуточные значения не выходят за модули входа, точность не теряется
+// (подмножественные суммы точного слоя копятся на bigint — internal/settle-exact).
 // Операция чистая: вход не мутируется.
 
 import type { BalanceEntry } from './balances'
+import { EXACT_LIMIT, exactTransfers } from './internal/settle-exact'
+import { greedyTransfers } from './internal/settle-greedy'
 
 /** Перевод седения: участник fromId переводит участнику toId сумму amount. */
 export interface Transfer {
@@ -30,42 +43,31 @@ export interface Transfer {
   amount: number
 }
 
-/** Рабочая запись жадного обхода: остаток долга (у должника) или кредита (у кредитора). */
-interface Working {
-  participantId: string
-  rest: number
-  order: number
-}
-
 /**
  * Сведение балансов: список переводов, погашающих все балансы в ноль.
- * Порядок переводов — порядок жадного обхода; контракт — в шапке модуля.
+ * Гибрид и тай-брейки — в шапке модуля; выбор solver-а — внутреннее дело
+ * операции: вызывающий не выбирает и не знает, какой сработал.
  */
 export function settle(balances: BalanceEntry[]): Transfer[] {
-  const debtors: Working[] = []
-  const creditors: Working[] = []
-  balances.forEach((entry, order) => {
-    if (entry.amount < 0) debtors.push({ participantId: entry.participantId, rest: -entry.amount, order })
-    else if (entry.amount > 0) creditors.push({ participantId: entry.participantId, rest: entry.amount, order })
-  })
-  const byAmountDesc = (a: Working, b: Working) =>
-    b.rest - a.rest !== 0 ? b.rest - a.rest : a.order - b.order
-  debtors.sort(byAmountDesc)
-  creditors.sort(byAmountDesc)
-
-  const transfers: Transfer[] = []
-  let i = 0
-  let j = 0
-  while (i < debtors.length && j < creditors.length) {
-    const debtor = debtors[i]
-    const creditor = creditors[j]
-    const amount = Math.min(debtor.rest, creditor.rest)
-    transfers.push({ fromId: debtor.participantId, toId: creditor.participantId, amount })
-    debtor.rest -= amount
-    creditor.rest -= amount
-    if (debtor.rest === 0) i += 1
-    if (creditor.rest === 0) j += 1
+  const ids: string[] = []
+  const amounts: number[] = []
+  for (const entry of balances) {
+    if (entry.amount !== 0) {
+      ids.push(entry.participantId)
+      amounts.push(entry.amount)
+    }
   }
-  // Σ балансов ноль — обе очереди исчерпываются одновременно.
-  return transfers
+
+  let plan = greedyTransfers(amounts)
+  // Точный слой — до порога ADR 0006 включительно; берётся только когда
+  // переводов строго меньше, при равенстве остаётся жадный.
+  if (amounts.length >= 2 && amounts.length <= EXACT_LIMIT) {
+    const exact = exactTransfers(amounts)
+    if (exact !== undefined && exact.length < plan.length) plan = exact
+  }
+  return plan.map((transfer) => ({
+    fromId: ids[transfer.from],
+    toId: ids[transfer.to],
+    amount: transfer.amount,
+  }))
 }
