@@ -1,23 +1,38 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import type { Participant } from '../../core'
+import type { Expense, Participant } from '../../core'
 import { TRIP_LIMITS } from '../../core'
 import { plural } from './format'
+import ExpensesCard from './ExpensesCard.vue'
+import type { ExpenseEditor } from './ExpensesCard.vue'
 import {
   useTrip,
   type AddParticipantResult,
+  type ExpenseInput,
   type RemoveParticipantResult,
+  type SaveExpenseResult,
 } from '../state/useTrip'
 import { isBlank } from '../state/validation'
 
 // Экран поездки без бизнес-логики: все правила (лимит, занятость, палитры) —
 // в useTrip; здесь только вызовы мутаций и человекочитаемые сообщения об отказах.
 
-const { trip, addParticipant, renameParticipant, removeParticipant, regenerateAvatar } =
-  useTrip()
+const {
+  trip,
+  addParticipant,
+  renameParticipant,
+  removeParticipant,
+  regenerateAvatar,
+  addExpense,
+  updateExpense,
+  removeExpense,
+} = useTrip()
 
 const participants = computed(() => trip.value?.participants ?? [])
 const limit = TRIP_LIMITS.participants
+
+// Что открыто в секции расходов: добавление, редактирование или ничего.
+const expenseEditor = ref<ExpenseEditor | null>(null)
 
 const nameDraft = ref('')
 // Режим переименования: id участника + черновик имени; null — никто не редактируется.
@@ -100,6 +115,72 @@ function remove(participant: Participant): void {
 function regenerate(participant: Participant): void {
   regenerateAvatar(participant.id)
   notice.value = null
+}
+
+function describeExpenseRefusal(result: Extract<SaveExpenseResult, { ok: false }>): string {
+  switch (result.reason) {
+    case 'not-found':
+      return 'Расход уже удалён'
+    case 'unknown-participant':
+      return 'Участник больше не в поездке'
+    case 'unknown-currency':
+      return 'Валюта больше не в поездке'
+    case 'limit':
+      return `Лимит поездки — ${result.max} расходов`
+    case 'split-mismatch':
+      return 'Сплит не сходится'
+    case 'empty-title':
+      return 'Введите название'
+    case 'bad-amount':
+      return 'Введите сумму'
+    case 'empty-split':
+      return 'Выберите участников'
+  }
+}
+
+function openAddExpense(): void {
+  expenseEditor.value = { kind: 'add' }
+  notice.value = null
+}
+
+function editExpense(expense: Expense): void {
+  expenseEditor.value = { kind: 'edit', expense }
+  notice.value = null
+}
+
+function cancelExpense(): void {
+  expenseEditor.value = null
+  notice.value = null
+}
+
+function saveExpense(input: ExpenseInput): void {
+  const editor = expenseEditor.value
+  if (!editor) return
+  const result =
+    editor.kind === 'edit' ? updateExpense(editor.expense.id, input) : addExpense(input)
+  if (result.ok) {
+    expenseEditor.value = null
+    notice.value = null
+  } else {
+    showNotice('error', describeExpenseRefusal(result))
+  }
+}
+
+// Расходы удаляются свободно, без подтверждения (тикет 09).
+function removeExpenseFromList(expense: Expense): void {
+  const result = removeExpense(expense.id)
+  if (result.ok) {
+    // Форма редактирования этого же расхода стала неактуальна — закрываем.
+    if (
+      expenseEditor.value?.kind === 'edit' &&
+      expenseEditor.value.expense.id === expense.id
+    ) {
+      expenseEditor.value = null
+    }
+    notice.value = null
+  } else {
+    showNotice('error', 'Расход уже удалён')
+  }
 }
 </script>
 
@@ -226,19 +307,6 @@ function regenerate(participant: Participant): void {
           </li>
         </TransitionGroup>
 
-        <p
-          v-if="notice"
-          role="alert"
-          class="text-sm"
-          :class="
-            notice.tone === 'error'
-              ? 'text-red-600 dark:text-red-400'
-              : 'text-zinc-500 dark:text-zinc-400'
-          "
-        >
-          {{ notice.text }}
-        </p>
-
         <form class="flex gap-2" @submit.prevent="submitAdd">
           <input
             v-model="nameDraft"
@@ -257,12 +325,38 @@ function regenerate(participant: Participant): void {
         </form>
       </section>
 
+      <ExpensesCard
+        :participants="participants"
+        :expenses="trip.expenses"
+        :currencies="trip.currencies"
+        :base-currency="trip.baseCurrency"
+        :editing="expenseEditor"
+        @open="openAddExpense"
+        @edit="editExpense"
+        @remove="removeExpenseFromList"
+        @save="saveExpense"
+        @cancel="cancelExpense"
+      />
+
+      <p
+        v-if="notice"
+        role="alert"
+        class="text-sm"
+        :class="
+          notice.tone === 'error'
+            ? 'text-red-600 dark:text-red-400'
+            : 'text-zinc-500 dark:text-zinc-400'
+        "
+      >
+        {{ notice.text }}
+      </p>
+
       <section
         class="rounded-2xl border border-dashed border-zinc-300 p-5 text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400"
         aria-label="Что дальше"
       >
-        Дальше — расходы с тремя режимами сплита, курсы валют и минимальные переводы.
-        Эти разделы появятся в следующих обновлениях.
+        Дальше — курсы валют и минимальные переводы. Эти разделы появятся в
+        следующих обновлениях.
       </section>
     </main>
 
