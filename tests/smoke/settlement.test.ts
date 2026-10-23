@@ -106,6 +106,27 @@ function seedWithZeroBalance(): void {
   })
 }
 
+/** Поездка RUB + EUR (курс 3/1) с Аней и Борей и расходом 100,00 EUR поровну:
+ * 300,00 RUB → Аня должна получить 150,00, Боря — отдать 150,00. */
+function seedEuroTrip(): void {
+  seedTrip((state) => {
+    state.currencies.push({ code: 'EUR', rate: { num: 3, den: 1 } })
+    state.participants.push(
+      { id: 'p1', name: 'Аня', color: '#059669', emoji: '🐻' },
+      { id: 'p2', name: 'Боря', color: '#0284c7', emoji: '🐧' },
+    )
+    state.expenses.push({
+      id: 'e1',
+      title: 'Ужин',
+      payerId: 'p1',
+      amount: 10000, // 100,00 EUR = 300,00 RUB по курсу 3/1
+      currencyCode: 'EUR',
+      createdAt: ISO,
+      split: { mode: 'equal', participantIds: ['p1', 'p2'] },
+    })
+  })
+}
+
 beforeEach(() => {
   vi.resetModules()
   localStorage.clear()
@@ -190,26 +211,30 @@ describe('сведение живое: пересчёт на каждом изм
 
 describe('суммы — в базовой валюте поездки', () => {
   it('расход в EUR по курсу 3/1 — баланс и перевод в RUB с копейками', async () => {
-    seedTrip((state) => {
-      state.currencies.push({ code: 'EUR', rate: { num: 3, den: 1 } })
-      state.participants.push(
-        { id: 'p1', name: 'Аня', color: '#059669', emoji: '🐻' },
-        { id: 'p2', name: 'Боря', color: '#0284c7', emoji: '🐧' },
-      )
-      state.expenses.push({
-        id: 'e1',
-        title: 'Ужин',
-        payerId: 'p1',
-        amount: 10000, // 100,00 EUR = 300,00 RUB
-        currencyCode: 'EUR',
-        createdAt: ISO,
-        split: { mode: 'equal', participantIds: ['p1', 'p2'] },
-      })
-    })
+    seedEuroTrip()
     const wrapper = await mountApp()
 
     expect(balanceTexts(wrapper)[0]).toContain('должны ему 150,00 RUB')
     expect(balanceTexts(wrapper)[1]).toContain('должен 150,00 RUB')
     expect(transferTexts(wrapper)[0]).toContain('150,00 RUB')
+  })
+})
+
+describe('правка курса пересчитывает сведение', () => {
+  it('курс EUR 3 → 5 в настройках валют — балансы и переводы стали вдвое больше', async () => {
+    seedEuroTrip()
+    const wrapper = await mountApp()
+    expect(transferTexts(wrapper)[0]).toContain('150,00 RUB')
+
+    await wrapper.find('button[aria-label="Изменить курс EUR"]').trigger('click')
+    await flush()
+    await wrapper.find('input[aria-label="Новый курс EUR"]').setValue('5')
+    await wrapper.find('button[aria-label="Сохранить курс EUR"]').trigger('click')
+    await flush()
+
+    // 100,00 EUR × 5 = 500,00 RUB → по 250,00 каждой стороне.
+    expect(balanceTexts(wrapper)[0]).toContain('должны ему 250,00 RUB')
+    expect(balanceTexts(wrapper)[1]).toContain('должен 250,00 RUB')
+    expect(transferTexts(wrapper)[0]).toContain('250,00 RUB')
   })
 })
