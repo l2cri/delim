@@ -1,6 +1,8 @@
 // Форматирование денежных сумм для интерфейса: минорные единицы → русская строка.
 // Без Intl: ручная сборка, дробная часть — ровно два знака после запятой.
 
+import type { Rational } from '../../core'
+
 /** Общий помощник: grouped — разделять ли целую часть группами по 3 (U+00A0). */
 function format(minor: number, grouped: boolean): string {
   const digits = String(Math.abs(minor)).padStart(3, '0')
@@ -36,4 +38,25 @@ export function plural(count: number, one: string, few: string, many: string): s
   if (mod10 === 1) return one
   if (mod10 >= 2 && mod10 <= 4) return few
   return many
+}
+
+/**
+ * Курс валюты — точное рациональное num/den — в десятичную строку с запятой:
+ * 3/1 → «3», 59/20 → «2,95», 1/2 → «0,5». Введённые курсом дроби всегда
+ * конечны (den — делитель степени десятки), поэтому деление — до нулевого
+ * остатка; защитный потолок 15 знаков — на случай произвольных рациональных
+ * курсов из ссылки (тикет 15), хвост просто обрезается.
+ */
+export function formatRate(rate: Rational): string {
+  const den = BigInt(rate.den)
+  let rest = BigInt(rate.num)
+  const digits: string[] = []
+  const intPart = rest / den
+  rest %= den
+  while (rest !== 0n && digits.length < 15) {
+    rest *= 10n
+    digits.push(String(rest / den))
+    rest %= den
+  }
+  return digits.length === 0 ? String(intPart) : `${intPart},${digits.join('')}`
 }
