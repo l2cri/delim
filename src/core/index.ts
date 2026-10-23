@@ -1,5 +1,5 @@
-// Публичный интерфейс ядра «Делим». Операции: схема, калькулятор;
-// остальные (balances, settle, codec) войдут здесь же.
+// Публичный интерфейс ядра «Делим». Операции: схема, калькулятор, балансы;
+// остальные (settle, codec) войдут здесь же.
 export type {
   LimitName,
   Participant,
@@ -15,3 +15,5 @@ export type {
 export { SCHEMA_VERSION, TRIP_LIMITS, createNewTrip, parseTripState } from './schema'
 export type { EvalResult } from './calculator'
 export { evalExpr } from './calculator'
+export type { BalanceEntry } from './balances'
+export { computeBalances } from './balances'
