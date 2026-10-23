@@ -43,32 +43,70 @@ export const PALETTE_EMOJI: readonly string[] = [
   '🐳',
 ]
 
-/**
- * Наименее используемое значение палитры по списку занятых; при ничьей — первое
- * по порядку палитры (детерминированность). Пока участников меньше палитры,
- * выдаёт свободные значения, поэтому первые 16 аватаров попарно различны.
- * exclude убирает одно значение из кандидатов — перегенерация обязана дать
- * значение, отличное от текущего; если исключать больше нечего (палитра из
- * одного значения), возвращается оно само.
- */
-export function pickLeastUsed(
-  palette: readonly string[],
-  used: readonly string[],
-  exclude?: string,
-): string {
+/** Счёт использований значений палитры по списку занятых. */
+function countUses(used: readonly string[]): Map<string, number> {
   const counts = new Map<string, number>()
   for (const value of used) {
     counts.set(value, (counts.get(value) ?? 0) + 1)
   }
+  return counts
+}
+
+/**
+ * Детерминированный автоподбор при добавлении: наименее используемое значение,
+ * при ничьей — первое по порядку палитры. Пока участников меньше палитры, выдаёт
+ * свободные значения, поэтому первые 16 аватаров попарно различны.
+ */
+export function pickLeastUsed(palette: readonly string[], used: readonly string[]): string {
+  const counts = countUses(used)
   let best: string | undefined
   let bestCount = Number.POSITIVE_INFINITY
   for (const value of palette) {
-    if (exclude !== undefined && value === exclude) continue
     const count = counts.get(value) ?? 0
     if (count < bestCount) {
       best = value
       bestCount = count
     }
   }
-  return best ?? (exclude as string)
+  return best as string
+}
+
+/**
+ * Перегенерация аватара: равновероятный выбор среди наименее используемых значений
+ * палитры, исключая текущее — кубик, а не пинг-понг между двумя значениями.
+ * Пока в палитре есть свободные значения, бросок всегда даёт свободное значение,
+ * поэтому уникальность аватаров переживает перегенерацию. Если исключать нечего
+ * (палитра из одного значения), возвращается оно же.
+ */
+export function pickLeastUsedRandom(
+  palette: readonly string[],
+  used: readonly string[],
+  exclude: string,
+): string {
+  const counts = countUses(used)
+  let minCount = Number.POSITIVE_INFINITY
+  const candidates: string[] = []
+  for (const value of palette) {
+    if (value === exclude) continue
+    const count = counts.get(value) ?? 0
+    if (count < minCount) {
+      minCount = count
+      candidates.length = 0
+      candidates.push(value)
+    } else if (count === minCount) {
+      candidates.push(value)
+    }
+  }
+  if (candidates.length === 0) return exclude
+  return candidates[randomIndex(candidates.length)]
+}
+
+/** Равномерный случайный индекс [0, bound): crypto-энтропия без смещения деления. */
+function randomIndex(bound: number): number {
+  const buf = new Uint32Array(1)
+  const limit = 2 ** 32 - (2 ** 32 % bound)
+  do {
+    crypto.getRandomValues(buf)
+  } while (buf[0] >= limit)
+  return buf[0] % bound
 }

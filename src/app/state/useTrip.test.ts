@@ -367,4 +367,20 @@ describe('участники: перегенерация аватара', () => 
 
     expect(() => regenerateAvatar('ghost')).not.toThrow()
   })
+
+  it('перегенерация сохраняет уникальность: новый аватар не занимает чужие значения', async () => {
+    const { useTrip } = await loadUseTrip()
+    const { trip, createTrip, addParticipant, regenerateAvatar } = useTrip()
+    createTrip({ name: 'Кипр', baseCurrency: 'RUB' })
+    for (const name of ['Аня', 'Боря', 'Вика']) addParticipant(name)
+    const first = trip.value?.participants[0]
+    if (!first) throw new Error('участники не добавились')
+
+    regenerateAvatar(first.id)
+
+    const colors = trip.value?.participants.map((p) => p.color) ?? []
+    const emoji = trip.value?.participants.map((p) => p.emoji) ?? []
+    expect(new Set(colors).size).toBe(3)
+    expect(new Set(emoji).size).toBe(3)
+  })
 })

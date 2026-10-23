@@ -2,7 +2,7 @@ import { ref, watch } from 'vue'
 import type { Ref } from 'vue'
 import { createNewTrip, parseTripState, TRIP_LIMITS } from '../../core'
 import type { Participant, Split, TripParseError, TripState } from '../../core'
-import { PALETTE_COLORS, PALETTE_EMOJI, pickLeastUsed } from './palette'
+import { PALETTE_COLORS, PALETTE_EMOJI, pickLeastUsed, pickLeastUsedRandom } from './palette'
 
 /**
  * Единственный владелец мутируемого стейта поездки (ADR 0009: композабл без Pinia).
@@ -164,12 +164,14 @@ function regenerateAvatar(id: string): void {
   const current = requireTrip()
   const participant = current.participants.find((p) => p.id === id)
   if (!participant) return
-  participant.color = pickLeastUsed(
+  // Кубик: равновероятно среди наименее занятых, текущее исключено — иначе
+  // бросок навсегда зацикливался бы между двумя значениями.
+  participant.color = pickLeastUsedRandom(
     PALETTE_COLORS,
     current.participants.map((p) => p.color),
     participant.color,
   )
-  participant.emoji = pickLeastUsed(
+  participant.emoji = pickLeastUsedRandom(
     PALETTE_EMOJI,
     current.participants.map((p) => p.emoji),
     participant.emoji,
