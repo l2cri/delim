@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import type { VueWrapper } from '@vue/test-utils'
 import { createNewTrip, parseTripState } from '../../src/core'
@@ -22,6 +22,16 @@ beforeEach(() => {
   vi.resetModules()
   localStorage.clear()
   window.location.hash = ''
+})
+
+afterEach(() => {
+  // Сессия = вкладка: она не только открылась, но и закрылась. beforeunload
+  // заставляет синглтон useTrip погасить отложенный дебаунс-сейв (clearTimeout
+  // во flushSave): взведённый на реальных часах таймер переживает
+  // vi.resetModules() и иначе срабатывает посреди следующего теста, перезаписывая
+  // localStorage поездкой из прошлого теста (флакер «Кипр вместо Грузии»).
+  window.dispatchEvent(new Event('beforeunload'))
+  localStorage.clear()
 })
 
 describe('создание поездки', () => {
