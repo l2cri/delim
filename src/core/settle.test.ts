@@ -8,15 +8,16 @@ function bal(participantId: string, amount: number): BalanceEntry {
 }
 
 /**
- * Применить переводы к балансам: сведение обязано погасить каждый баланс ровно
- * в ноль, а каждый перевод — быть строго положительным.
+ * Применить переводы к балансам: перевод гасит баланс — долг должника и требование
+ * кредитора идут к нулю (должнику +сумма, кредитору −сумма). Сведение обязано
+ * погасить каждый баланс ровно в ноль, а каждый перевод — быть строго положительным.
  */
 function expectSettled(balances: BalanceEntry[], transfers: Transfer[]): void {
   const rest = new Map(balances.map((entry) => [entry.participantId, entry.amount]))
   for (const transfer of transfers) {
     expect(transfer.amount, `перевод ${transfer.fromId}→${transfer.toId}`).toBeGreaterThan(0)
-    rest.set(transfer.fromId, rest.get(transfer.fromId)! - transfer.amount)
-    rest.set(transfer.toId, rest.get(transfer.toId)! + transfer.amount)
+    rest.set(transfer.fromId, rest.get(transfer.fromId)! + transfer.amount)
+    rest.set(transfer.toId, rest.get(transfer.toId)! - transfer.amount)
   }
   for (const [participantId, amount] of rest) {
     expect(amount, `остаток ${participantId}`).toBe(0)
