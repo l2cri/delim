@@ -35,8 +35,23 @@ Vite + Vue 3 + TypeScript · Tailwind (без UI-кита) · vite-plugin-pwa ·
 lz-string · zod · деплой GitHub Pages. Стейт — на композаблах, без Pinia. Ядро домена —
 чистый TypeScript без зависимостей от Vue.
 
+## Разработка
+
+```bash
+npm install
+npm run dev        # дев-сервер в корне
+npm test           # vitest run
+npm run build      # vue-tsc --noEmit + vite build
+npm run preview    # раздача dist (с той же базой, что у сборки)
+npm run icons      # регенерация PWA-иконок (public/)
+```
+
+База деплоя (`/delim/`) выводится из `GITHUB_REPOSITORY`: в GitHub Actions она есть
+всегда, локальные сборки и дев-сервер живут в корне.
+
 ## Статус
 
-Спецификация завершена (интервью grill-me, октябрь 2026), кода ещё нет.
-Старт — с тикета [tickets/01-каркас-и-деплой.md](tickets/01-каркас-и-деплой.md):
-фронт работ = тикеты, у которых все блокаторы закрыты (см. [tickets/README.md](tickets/README.md)).
+Каркас собран и деплоится (тикет 01): Vite + Vue 3 + TS + Tailwind, Vitest в CI,
+PWA с precache (работает офлайн после первого открытия), GitHub Pages по пушу в master —
+https://l2cri.github.io/delim/. Доменная логика — с тикета 02 (схема стейта);
+фронт работ — в [tickets/README.md](tickets/README.md).
