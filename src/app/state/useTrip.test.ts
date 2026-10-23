@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createNewTrip, parseTripState } from '../../core'
+import { computeBalances, createNewTrip, parseTripState, settle } from '../../core'
 import type { TripState } from '../../core'
 import { PALETTE_COLORS, PALETTE_EMOJI } from './palette'
 import { STORAGE_KEY } from './storage'
@@ -776,6 +776,231 @@ describe('расходы: связь с участниками', () => {
       reason: 'in-use',
       expenses: 1,
       payments: 0,
+    })
+  })
+})
+
+/** Поездка RUB с EUR (курс 3/1) и двумя участниками — сцена для валют. */
+async function loadTripWithEuro() {
+  const { useTrip } = await loadUseTrip()
+  const t = useTrip()
+  t.createTrip({ name: 'Кипр', baseCurrency: 'RUB' })
+  if (!t.addCurrency('EUR', { num: 3, den: 1 }).ok) throw new Error('EUR не добавился')
+  const ids = ['Аня', 'Боря'].map((name) => {
+    const added = t.addParticipant(name)
+    if (!added.ok) throw new Error('участник не добавился')
+    return added.participant.id
+  })
+  return { t, anya: ids[0], borya: ids[1] }
+}
+
+describe('валюты: добавление', () => {
+  it('добавляет валюту с обрезанным кодом и переданным курсом', async () => {
+    const { t } = await loadTripWithEuro()
+
+    expect(t.addCurrency('  GEL  ', { num: 59, den: 2 })).toEqual({ ok: true })
+    expect(t.trip.value?.currencies).toEqual([
+      { code: 'RUB', rate: { num: 1, den: 1 } },
+      { code: 'EUR', rate: { num: 3, den: 1 } },
+      { code: 'GEL', rate: { num: 59, den: 2 } },
+    ])
+  })
+
+  it('пустой код — отказ', async () => {
+    const { t } = await loadTripWithEuro()
+
+    expect(t.addCurrency('   ', { num: 1, den: 1 })).toEqual({ ok: false, reason: 'empty-code' })
+    expect(t.trip.value?.currencies).toHaveLength(2)
+  })
+
+  it('дубликат кода — отказ, включая базовую валюту', async () => {
+    const { t } = await loadTripWithEuro()
+
+    expect(t.addCurrency('EUR', { num: 4, den: 1 })).toEqual({
+      ok: false,
+      reason: 'duplicate',
+      code: 'EUR',
+    })
+    expect(t.addCurrency('RUB', { num: 2, den: 1 })).toEqual({
+      ok: false,
+      reason: 'duplicate',
+      code: 'RUB',
+    })
+    expect(t.trip.value?.currencies).toHaveLength(2)
+  })
+
+  it('десятая валюта добавляется, одиннадцатая — отказ с лимитом', async () => {
+    const { useTrip } = await loadUseTrip()
+    const t = useTrip()
+    t.createTrip({ name: 'Кипр', baseCurrency: 'RUB' })
+    // Базовая уже занимает одно место из 10; добиваем до десяти и пробуем одиннадцатую.
+    for (let i = 1; i <= 9; i++) {
+      if (!t.addCurrency(`C${i}`, { num: 1, den: 1 }).ok) throw new Error(`валюта ${i} не добавилась`)
+    }
+    expect(t.trip.value?.currencies).toHaveLength(10)
+
+    expect(t.addCurrency('C10', { num: 1, den: 1 })).toEqual({
+      ok: false,
+      reason: 'limit',
+      max: 10,
+    })
+    expect(t.trip.value?.currencies).toHaveLength(10)
+  })
+
+  it('нулевая или дробная пара — отказ bad-rate', async () => {
+    const { t } = await loadTripWithEuro()
+
+    expect(t.addCurrency('GEL', { num: 0, den: 1 })).toEqual({ ok: false, reason: 'bad-rate' })
+    expect(t.addCurrency('GEL', { num: 1, den: 0 })).toEqual({ ok: false, reason: 'bad-rate' })
+    expect(t.addCurrency('GEL', { num: 1.5, den: 1 })).toEqual({ ok: false, reason: 'bad-rate' })
+    expect(t.trip.value?.currencies).toHaveLength(2)
+  })
+})
+
+describe('валюты: правка курса', () => {
+  it('заменяет курс, код и порядок валют не тронуты', async () => {
+    const { t } = await loadTripWithEuro()
+    t.addCurrency('GEL', { num: 29, den: 1 })
+
+    expect(t.updateCurrencyRate('EUR', { num: 59, den: 20 })).toEqual({ ok: true })
+    expect(t.trip.value?.currencies).toEqual([
+      { code: 'RUB', rate: { num: 1, den: 1 } },
+      { code: 'EUR', rate: { num: 59, den: 20 } },
+      { code: 'GEL', rate: { num: 29, den: 1 } },
+    ])
+  })
+
+  it('несуществующий код — отказ not-found', async () => {
+    const { t } = await loadTripWithEuro()
+
+    expect(t.updateCurrencyRate('USD', { num: 1, den: 1 })).toEqual({
+      ok: false,
+      reason: 'not-found',
+      code: 'USD',
+    })
+  })
+
+  it('курс базовой валюты не задаётся — отказ, курс остаётся 1/1', async () => {
+    const { t } = await loadTripWithEuro()
+
+    expect(t.updateCurrencyRate('RUB', { num: 2, den: 1 })).toEqual({
+      ok: false,
+      reason: 'base-currency',
+      code: 'RUB',
+    })
+    expect(t.trip.value?.currencies[0]?.rate).toEqual({ num: 1, den: 1 })
+  })
+
+  it('небезопасная пара — отказ bad-rate', async () => {
+    const { t } = await loadTripWithEuro()
+
+    expect(t.updateCurrencyRate('EUR', { num: 0, den: 3 })).toEqual({ ok: false, reason: 'bad-rate' })
+    expect(t.trip.value?.currencies[1]?.rate).toEqual({ num: 3, den: 1 })
+  })
+})
+
+describe('валюты: удаление', () => {
+  it('неиспользуемая валюта удаляется, остальные на месте', async () => {
+    const { t } = await loadTripWithEuro()
+    t.addCurrency('GEL', { num: 29, den: 1 })
+
+    expect(t.removeCurrency('GEL')).toEqual({ ok: true })
+    expect(t.trip.value?.currencies.map((c) => c.code)).toEqual(['RUB', 'EUR'])
+  })
+
+  it('несуществующий код — отказ not-found', async () => {
+    const { t } = await loadTripWithEuro()
+
+    expect(t.removeCurrency('USD')).toEqual({ ok: false, reason: 'not-found', code: 'USD' })
+  })
+
+  it('базовая валюта не удаляется — отказ base-currency', async () => {
+    const { t } = await loadTripWithEuro()
+
+    expect(t.removeCurrency('RUB')).toEqual({ ok: false, reason: 'base-currency', code: 'RUB' })
+    expect(t.trip.value?.currencies.map((c) => c.code)).toContain('RUB')
+  })
+
+  it('валюта в расходах и выплатах — отказ in-use со счётчиками', async () => {
+    const { t, anya, borya } = await loadTripWithEuro()
+    const first = t.addExpense({
+      title: 'Ужин',
+      payerId: anya,
+      amount: 1000,
+      currencyCode: 'EUR',
+      split: { mode: 'equal', participantIds: [anya, borya] },
+    })
+    const second = t.addExpense({
+      title: 'Такси',
+      payerId: borya,
+      amount: 500,
+      currencyCode: 'EUR',
+      split: { mode: 'equal', participantIds: [anya] },
+    })
+    const trip = t.trip.value as TripState
+    trip.payments.push({
+      id: 'v1',
+      fromId: borya,
+      toId: anya,
+      amount: 300,
+      currencyCode: 'EUR',
+    })
+    if (!first.ok || !second.ok) throw new Error('расходы не добавились')
+
+    expect(t.removeCurrency('EUR')).toEqual({ ok: false, reason: 'in-use', expenses: 2, payments: 1 })
+    expect(t.trip.value?.currencies.map((c) => c.code)).toContain('EUR')
+  })
+})
+
+describe('правка курса пересчитывает балансы и переводы задним числом', () => {
+  it('курс EUR 3/1 → 4/1 меняет балансы и сведение расходов в евро', async () => {
+    const { t, anya, borya } = await loadTripWithEuro()
+    const added = t.addExpense({
+      title: 'Ужин',
+      payerId: anya,
+      amount: 100, // 1,00 EUR
+      currencyCode: 'EUR',
+      split: { mode: 'equal', participantIds: [anya, borya] },
+    })
+    if (!added.ok) throw new Error('расход не добавился')
+
+    // 100 минорных EUR (1,00) при 3/1 = 300 минорных RUB: квоты 150/150,
+    // Аня-плательщик +150, Боря −150.
+    const before = computeBalances(t.trip.value as TripState)
+    expect(before).toEqual([
+      { participantId: anya, amount: 150 },
+      { participantId: borya, amount: -150 },
+    ])
+    expect(settle(before)).toEqual([{ fromId: borya, toId: anya, amount: 150 }])
+
+    expect(t.updateCurrencyRate('EUR', { num: 4, den: 1 })).toEqual({ ok: true })
+
+    // При 4/1 та же трата — 400 минорных RUB, квоты 200/200: те же записи, новые суммы.
+    const after = computeBalances(t.trip.value as TripState)
+    expect(after).toEqual([
+      { participantId: anya, amount: 200 },
+      { participantId: borya, amount: -200 },
+    ])
+    expect(settle(after)).toEqual([{ fromId: borya, toId: anya, amount: 200 }])
+  })
+})
+
+describe('автосохранение правки курса', () => {
+  it('правка курса попадает в хранилище и парсится обратно ядром', async () => {
+    const { t } = await loadTripWithEuro()
+
+    expect(t.updateCurrencyRate('EUR', { num: 59, den: 20 })).toEqual({ ok: true })
+    await flushWatchers()
+    vi.advanceTimersByTime(500)
+
+    const raw = localStorage.getItem(STORAGE_KEY)
+    expect(raw).not.toBeNull()
+    const parsed = parseTripState(raw as string)
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    expect(parsed.state.currencies.find((c) => c.code === 'EUR')?.rate).toEqual({
+      num: 59,
+      den: 20,
     })
   })
 })
