@@ -2,8 +2,6 @@ import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import AmountInput from '../../src/app/ui/AmountInput.vue'
 
-const NBSP = '\u00A0'
-
 describe('инпут суммы с живым предпросмотром', () => {
   it('«1500/4+200» → emitted 57500 и предпросмотр «→ 575,00»', async () => {
     const wrapper = mount(AmountInput, { props: { modelValue: null } })
@@ -47,11 +45,22 @@ describe('инпут суммы с живым предпросмотром', () 
     expect(wrapper.text()).not.toContain('→')
   })
 
-  it('внешнее значение 150050 → в инпуте «1 500,50» с неразрывными пробелами', async () => {
+  it('внешнее значение 150050 → в инпуте «1500,50» (сидирование без группировки)', async () => {
     const wrapper = mount(AmountInput, { props: { modelValue: null } })
     await wrapper.setProps({ modelValue: 150050 })
 
     const value = (wrapper.find('input').element as HTMLInputElement).value
-    expect(value).toBe(`1${NBSP}500,50`)
+    expect(value).toBe('1500,50')
+  })
+
+  it('после сидирования черновик валиден: без aria-invalid, предпросмотр с группировкой', async () => {
+    const wrapper = mount(AmountInput, { props: { modelValue: null } })
+    await wrapper.setProps({ modelValue: 150050 })
+    const input = wrapper.find('input')
+
+    expect(input.attributes('aria-invalid')).toBeUndefined()
+    expect(input.classes()).not.toContain('border-red-500')
+    // Предпросмотр остаётся с группировкой разрядов через U+00A0.
+    expect(wrapper.text()).toContain('→ 1\u00A0500,50')
   })
 })

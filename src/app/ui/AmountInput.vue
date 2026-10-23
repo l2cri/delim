@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { evalExpr } from '../../core'
-import { formatMinor } from './format'
+import { formatMinor, formatMinorPlain } from './format'
 
 const props = defineProps<{
   /** Сумма в минорных единицах; null — пусто или некорректно. */
@@ -40,8 +40,9 @@ function onInput(event: Event) {
 }
 
 // Синхронизация извне: пришло число, которого черновик не даёт, — набрать его
-// в поле; пришёл null при осмысленном черновике (сброс формы снаружи) — очистить.
-// Некорректный черновик на середине ввода не затирать.
+// в поле (без группировки разрядов, чтобы evalExpr читал черновик обратно и не
+// было ложной подсветки); пришёл null при осмысленном черновике (сброс формы
+// снаружи) — очистить. Некорректный черновик на середине ввода не затирать.
 watch(
   () => props.modelValue,
   (value) => {
@@ -49,7 +50,7 @@ watch(
     if (value === null) {
       if (current.ok) draft.value = ''
     } else if (!(current.ok && current.minor === value)) {
-      draft.value = formatMinor(value)
+      draft.value = formatMinorPlain(value)
     }
   },
   { immediate: true },
