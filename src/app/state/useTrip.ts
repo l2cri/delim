@@ -1,10 +1,10 @@
 import { ref, watch } from 'vue'
 import type { Ref } from 'vue'
 import { createNewTrip, parseTripState, TRIP_LIMITS } from '../../core'
-import type { Participant, Split, TripParseError, TripState } from '../../core'
+import type { Expense, Participant, Split, TripParseError, TripState } from '../../core'
 import { PALETTE_COLORS, PALETTE_EMOJI, pickLeastUsed, pickLeastUsedRandom } from './palette'
 import { clearStoredTrip, readStoredTrip, writeStoredTrip } from './storage'
-import { isBlank } from './validation'
+import { isBlank, splitDelta } from './validation'
 
 /**
  * Единственный владелец мутируемого стейта поездки (ADR 0009: композабл без Pinia).
@@ -32,6 +32,28 @@ export type RemoveParticipantResult =
   | { ok: true }
   | { ok: false; reason: 'not-found' }
   | { ok: false; reason: 'in-use'; expenses: number; payments: number }
+
+/** Вход мутаций расхода: сплит предусловием построен валидным UI, useTrip не пересобирает. */
+export type ExpenseInput = {
+  title: string
+  payerId: string
+  amount: number // целые минорные единицы, > 0
+  currencyCode: string
+  split: Split
+}
+
+export type SaveExpenseResult =
+  | { ok: true; expense: Expense }
+  | { ok: false; reason: 'empty-title' }
+  | { ok: false; reason: 'bad-amount' }
+  | { ok: false; reason: 'empty-split' }
+  | { ok: false; reason: 'limit'; max: number }
+  | { ok: false; reason: 'unknown-participant'; id: string }
+  | { ok: false; reason: 'unknown-currency'; code: string }
+  | { ok: false; reason: 'split-mismatch'; delta: number }
+  | { ok: false; reason: 'not-found' } // только updateExpense
+
+export type RemoveExpenseResult = { ok: true } | { ok: false; reason: 'not-found' }
 
 // Стейт живёт на уровне модуля: все вызовы useTrip() внутри приложения смотрят
 // на одни и те же refs — один способ хранения, один автосейв.
@@ -93,6 +115,12 @@ function splitMentions(split: Split, id: string): boolean {
   return split.shares.some((s) => s.participantId === id)
 }
 
+/** Участники сплита списком id в порядке следования: equal — participantIds,
+ * точные суммы и доли — id из того же списка долей. */
+function splitIds(split: Split): string[] {
+  return split.mode === 'equal' ? split.participantIds : split.shares.map((s) => s.participantId)
+}
+
 function createTrip(input: { name: string; baseCurrency: string }): CreateTripResult {
   if (isBlank(input.name)) return { ok: false, reason: 'empty-name' }
   if (isBlank(input.baseCurrency)) return { ok: false, reason: 'empty-currency' }
@@ -151,6 +179,81 @@ function removeParticipant(id: string): RemoveParticipantResult {
   return { ok: true }
 }
 
+/**
+ * Общие проверки входа расхода в едином порядке (детерминированном для тестов):
+ * название → сумма → лимит → непустой сплит → участники → валюта → сходимость сплита.
+ * null — вход годен. Лимит спрашивает только добавление: обновление не растит список.
+ */
+function expenseInputError(
+  current: TripState,
+  input: ExpenseInput,
+  withLimit: boolean,
+): SaveExpenseResult | null {
+  if (isBlank(input.title)) return { ok: false, reason: 'empty-title' }
+  if (!Number.isInteger(input.amount) || input.amount <= 0) {
+    return { ok: false, reason: 'bad-amount' }
+  }
+  if (withLimit && current.expenses.length >= TRIP_LIMITS.expenses) {
+    return { ok: false, reason: 'limit', max: TRIP_LIMITS.expenses }
+  }
+  if (splitIds(input.split).length === 0) return { ok: false, reason: 'empty-split' }
+  const knownIds = new Set(current.participants.map((p) => p.id))
+  if (!knownIds.has(input.payerId)) {
+    return { ok: false, reason: 'unknown-participant', id: input.payerId }
+  }
+  for (const participantId of splitIds(input.split)) {
+    if (!knownIds.has(participantId)) {
+      return { ok: false, reason: 'unknown-participant', id: participantId }
+    }
+  }
+  if (!current.currencies.some((c) => c.code === input.currencyCode)) {
+    return { ok: false, reason: 'unknown-currency', code: input.currencyCode }
+  }
+  const delta = splitDelta(input.amount, input.split)
+  if (delta !== 0) return { ok: false, reason: 'split-mismatch', delta }
+  return null
+}
+
+function addExpense(input: ExpenseInput): SaveExpenseResult {
+  const current = requireTrip()
+  const error = expenseInputError(current, input, true)
+  if (error) return error
+  const expense: Expense = {
+    id: crypto.randomUUID(),
+    title: input.title.trim(),
+    payerId: input.payerId,
+    amount: input.amount,
+    currencyCode: input.currencyCode,
+    createdAt: new Date().toISOString(),
+    split: input.split,
+  }
+  current.expenses.push(expense)
+  return { ok: true, expense }
+}
+
+function updateExpense(id: string, input: ExpenseInput): SaveExpenseResult {
+  const current = requireTrip()
+  const target = current.expenses.find((e) => e.id === id)
+  if (!target) return { ok: false, reason: 'not-found' }
+  const error = expenseInputError(current, input, false)
+  if (error) return error
+  // id и createdAt — идентичность записи, они неприкосновенны; остальное заменяется.
+  target.title = input.title.trim()
+  target.payerId = input.payerId
+  target.amount = input.amount
+  target.currencyCode = input.currencyCode
+  target.split = input.split
+  return { ok: true, expense: target }
+}
+
+function removeExpense(id: string): RemoveExpenseResult {
+  const current = requireTrip()
+  const kept = current.expenses.filter((e) => e.id !== id)
+  if (kept.length === current.expenses.length) return { ok: false, reason: 'not-found' }
+  current.expenses = kept
+  return { ok: true }
+}
+
 function regenerateAvatar(id: string): void {
   const current = requireTrip()
   const participant = current.participants.find((p) => p.id === id)
@@ -181,6 +284,9 @@ export function useTrip(): {
   addParticipant(name: string): AddParticipantResult
   renameParticipant(id: string, name: string): RenameParticipantResult
   removeParticipant(id: string): RemoveParticipantResult
+  addExpense(input: ExpenseInput): SaveExpenseResult
+  updateExpense(id: string, input: ExpenseInput): SaveExpenseResult
+  removeExpense(id: string): RemoveExpenseResult
   regenerateAvatar(id: string): void
   discardCorrupted(): void
 } {
@@ -191,6 +297,9 @@ export function useTrip(): {
     addParticipant,
     renameParticipant,
     removeParticipant,
+    addExpense,
+    updateExpense,
+    removeExpense,
     regenerateAvatar,
     discardCorrupted,
   }

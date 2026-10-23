@@ -18,107 +18,20 @@
 // Выплата: c = roundHalfUp(amount × num / den); отправителю −c, получателю +c.
 //
 // Вся рациональная арифметика — на bigint (как в calculator.ts), накопление проводок —
-// тоже bigint, перевод в number на выходе. Предусловие контракта: итоговые балансы
-// помещаются в Number.MAX_SAFE_INTEGER. Вход — валидный TripState (создан
+// тоже bigint, перевод в number на выходе. Квоты, доли и конвертация — общие с
+// разбиением сплитов для UI (splits.ts) примитивы в ./internal — гроссбух и показ
+// долей до сохранения расхода считают одинаково. Предусловие контракта: итоговые
+// балансы помещаются в Number.MAX_SAFE_INTEGER. Вход — валидный TripState (создан
 // createNewTrip/parseTripState): операция чистая и детерминированная, повторной
 // валидации не выполняет.
 
-import type { Expense, Rational, Split, TripState } from './schema'
+import type { TripState } from './schema'
+import { convertAmount, splitConverted, splitParticipantIds } from './internal/split'
 
 /** Баланс участника: целые минорные единицы базовой валюты. */
 export interface BalanceEntry {
   participantId: string
   amount: number
-}
-
-/** Неотрицательное рациональное n/d, d > 0, несократимая. */
-interface Rat {
-  n: bigint
-  d: bigint
-}
-
-function gcd(a: bigint, b: bigint): bigint {
-  while (b > 0n) {
-    const r = a % b
-    a = b
-    b = r
-  }
-  return a
-}
-
-function rat(n: bigint, d: bigint): Rat {
-  const g = gcd(n, d)
-  return { n: n / g, d: d / g }
-}
-
-function addRat(a: Rat, b: Rat): Rat {
-  return rat(a.n * b.d + b.n * a.d, a.d * b.d)
-}
-
-/** floor для неотрицательного рационального: знаменатель > 0, округление вниз. */
-function floorRat(a: Rat): bigint {
-  return a.n / a.d
-}
-
-/** Сравнение дробных частей без деления — перекрёстным умножением. */
-function fracCmp(a: Rat, b: Rat): number {
-  const l = (a.n % a.d) * b.d
-  const r = (b.n % b.d) * a.d
-  return l < r ? -1 : l > r ? 1 : 0
-}
-
-/** Округление к ближайшей минорной единице, половина — вверх. */
-function roundHalfUpRat(a: Rat): bigint {
-  return floorRat(a) + (2n * (a.n % a.d) >= a.d ? 1n : 0n)
-}
-
-/** Точные квоты участников сплита в минорных единицах базовой валюты. */
-function splitQuotas(expense: Expense, rate: Rational): Rat[] {
-  const amount = BigInt(expense.amount)
-  const num = BigInt(rate.num)
-  const den = BigInt(rate.den)
-  switch (expense.split.mode) {
-    case 'equal': {
-      const k = BigInt(expense.split.participantIds.length)
-      return expense.split.participantIds.map(() => rat(amount * num, den * k))
-    }
-    case 'shares': {
-      const w = expense.split.shares.reduce((sum, share) => sum + BigInt(share.weight), 0n)
-      return expense.split.shares.map((share) =>
-        rat(amount * BigInt(share.weight) * num, den * w),
-      )
-    }
-    case 'exact': {
-      return expense.split.shares.map((share) => rat(BigInt(share.amount) * num, den))
-    }
-  }
-}
-
-/** Наибольшие остатки: каждому floor(q_i), остаток total − Σ floor — по наибольшей дробной части. */
-function largestRemainder(quotas: Rat[], total: bigint): bigint[] {
-  const shares = quotas.map(floorRat)
-  let remainder = total - shares.reduce((sum, floor) => sum + floor, 0n)
-  const order = quotas.map((_, i) => i).sort((i, j) => {
-    const byFrac = fracCmp(quotas[i], quotas[j])
-    return byFrac !== 0 ? -byFrac : i - j
-  })
-  for (const i of order) {
-    if (remainder <= 0n) break
-    shares[i] += 1n
-    remainder -= 1n
-  }
-  return shares
-}
-
-function splitParticipantIds(split: Split): string[] {
-  switch (split.mode) {
-    case 'equal':
-      return split.participantIds
-    case 'exact':
-      return split.shares.map((share) => share.participantId)
-    case 'shares':
-      return split.shares.map((share) => share.participantId)
-  }
 }
 
 /**
@@ -135,9 +48,7 @@ export function computeBalances(state: TripState): BalanceEntry[] {
 
   for (const expense of state.expenses) {
     const rate = rates.get(expense.currencyCode)!
-    const quotas = splitQuotas(expense, rate)
-    const consumed = roundHalfUpRat(quotas.reduce(addRat))
-    const shares = largestRemainder(quotas, consumed)
+    const { total: consumed, shares } = splitConverted(expense.split, expense.amount, rate)
     apply(expense.payerId, consumed)
     for (const [i, id] of splitParticipantIds(expense.split).entries()) {
       apply(id, -shares[i])
@@ -146,9 +57,7 @@ export function computeBalances(state: TripState): BalanceEntry[] {
 
   for (const payment of state.payments) {
     const rate = rates.get(payment.currencyCode)!
-    const converted = roundHalfUpRat(
-      rat(BigInt(payment.amount) * BigInt(rate.num), BigInt(rate.den)),
-    )
+    const converted = convertAmount(payment.amount, rate)
     apply(payment.fromId, -converted)
     apply(payment.toId, converted)
   }

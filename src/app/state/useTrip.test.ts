@@ -12,6 +12,19 @@ async function loadUseTrip() {
   return await import('./useTrip')
 }
 
+/** Поездка с двумя участниками (Аня, Боря) и базовой валютой RUB — сцена для расходов. */
+async function loadTripForExpenses() {
+  const { useTrip } = await loadUseTrip()
+  const t = useTrip()
+  t.createTrip({ name: 'Кипр', baseCurrency: 'RUB' })
+  const ids = ['Аня', 'Боря'].map((name) => {
+    const added = t.addParticipant(name)
+    if (!added.ok) throw new Error('участник не добавился')
+    return added.participant.id
+  })
+  return { t, anya: ids[0], borya: ids[1] }
+}
+
 beforeEach(() => {
   vi.resetModules()
   localStorage.clear()
@@ -377,5 +390,392 @@ describe('участники: перегенерация аватара', () => 
     const emoji = trip.value?.participants.map((p) => p.emoji) ?? []
     expect(new Set(colors).size).toBe(3)
     expect(new Set(emoji).size).toBe(3)
+  })
+})
+
+describe('расходы: добавление', () => {
+  it('equal — расход в списке, название обрезано, id и createdAt заполнены', async () => {
+    const { t, anya, borya } = await loadTripForExpenses()
+
+    const result = t.addExpense({
+      title: '  Такси  ',
+      payerId: anya,
+      amount: 1000,
+      currencyCode: 'RUB',
+      split: { mode: 'equal', participantIds: [anya, borya] },
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(t.trip.value?.expenses).toHaveLength(1)
+    expect(t.trip.value?.expenses[0]).toEqual(result.expense)
+    expect(result.expense.title).toBe('Такси')
+    expect(result.expense.id).not.toBe('')
+    expect(Number.isNaN(Date.parse(result.expense.createdAt))).toBe(false)
+  })
+
+  it('exact сходящийся — расход в списке, название обрезано, id и createdAt заполнены', async () => {
+    const { t, anya, borya } = await loadTripForExpenses()
+
+    const result = t.addExpense({
+      title: '  Продукты  ',
+      payerId: anya,
+      amount: 1500,
+      currencyCode: 'RUB',
+      split: {
+        mode: 'exact',
+        shares: [
+          { participantId: anya, amount: 700 },
+          { participantId: borya, amount: 800 },
+        ],
+      },
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(t.trip.value?.expenses).toHaveLength(1)
+    expect(t.trip.value?.expenses[0]).toEqual(result.expense)
+    expect(result.expense.title).toBe('Продукты')
+    expect(result.expense.id).not.toBe('')
+    expect(Number.isNaN(Date.parse(result.expense.createdAt))).toBe(false)
+  })
+
+  it('shares — расход в списке, название обрезано, id и createdAt заполнены', async () => {
+    const { t, anya, borya } = await loadTripForExpenses()
+
+    const result = t.addExpense({
+      title: '  Бензин  ',
+      payerId: borya,
+      amount: 1000,
+      currencyCode: 'RUB',
+      split: {
+        mode: 'shares',
+        shares: [
+          { participantId: anya, weight: 1 },
+          { participantId: borya, weight: 3 },
+        ],
+      },
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(t.trip.value?.expenses).toHaveLength(1)
+    expect(t.trip.value?.expenses[0]).toEqual(result.expense)
+    expect(result.expense.title).toBe('Бензин')
+    expect(result.expense.id).not.toBe('')
+    expect(Number.isNaN(Date.parse(result.expense.createdAt))).toBe(false)
+  })
+
+  it('пустое название — отказ, расход не добавляется', async () => {
+    const { t, anya } = await loadTripForExpenses()
+
+    expect(
+      t.addExpense({
+        title: '   ',
+        payerId: anya,
+        amount: 1000,
+        currencyCode: 'RUB',
+        split: { mode: 'equal', participantIds: [anya] },
+      }),
+    ).toEqual({ ok: false, reason: 'empty-title' })
+    expect(t.trip.value?.expenses).toHaveLength(0)
+  })
+
+  it('сумма ноль, отрицательная или дробная — отказ bad-amount', async () => {
+    const { t, anya } = await loadTripForExpenses()
+
+    for (const amount of [0, -5, 1.5]) {
+      expect(
+        t.addExpense({
+          title: 'Такси',
+          payerId: anya,
+          amount,
+          currencyCode: 'RUB',
+          split: { mode: 'equal', participantIds: [anya] },
+        }),
+      ).toEqual({ ok: false, reason: 'bad-amount' })
+    }
+    expect(t.trip.value?.expenses).toHaveLength(0)
+  })
+
+  it('сплит без участников — отказ empty-split в режимах equal и exact', async () => {
+    const { t, anya } = await loadTripForExpenses()
+
+    expect(
+      t.addExpense({
+        title: 'Такси',
+        payerId: anya,
+        amount: 1000,
+        currencyCode: 'RUB',
+        split: { mode: 'equal', participantIds: [] },
+      }),
+    ).toEqual({ ok: false, reason: 'empty-split' })
+    expect(
+      t.addExpense({
+        title: 'Такси',
+        payerId: anya,
+        amount: 1000,
+        currencyCode: 'RUB',
+        split: { mode: 'exact', shares: [] },
+      }),
+    ).toEqual({ ok: false, reason: 'empty-split' })
+    expect(t.trip.value?.expenses).toHaveLength(0)
+  })
+
+  it('триста первый расход — отказ с лимитом 300', async () => {
+    const { t, anya } = await loadTripForExpenses()
+
+    for (let i = 1; i <= 300; i++) {
+      const added = t.addExpense({
+        title: `Расход ${i}`,
+        payerId: anya,
+        amount: 10,
+        currencyCode: 'RUB',
+        split: { mode: 'equal', participantIds: [anya] },
+      })
+      if (!added.ok) throw new Error(`расход ${i} не добавился`)
+    }
+
+    expect(
+      t.addExpense({
+        title: 'Лишний',
+        payerId: anya,
+        amount: 10,
+        currencyCode: 'RUB',
+        split: { mode: 'equal', participantIds: [anya] },
+      }),
+    ).toEqual({ ok: false, reason: 'limit', max: 300 })
+    expect(t.trip.value?.expenses).toHaveLength(300)
+  })
+
+  it('неизвестный плательщик — отказ с id призрака', async () => {
+    const { t, anya } = await loadTripForExpenses()
+
+    expect(
+      t.addExpense({
+        title: 'Такси',
+        payerId: 'ghost-payer',
+        amount: 1000,
+        currencyCode: 'RUB',
+        split: { mode: 'equal', participantIds: [anya] },
+      }),
+    ).toEqual({ ok: false, reason: 'unknown-participant', id: 'ghost-payer' })
+    expect(t.trip.value?.expenses).toHaveLength(0)
+  })
+
+  it('неизвестный участник сплита — отказ с его id', async () => {
+    const { t, anya } = await loadTripForExpenses()
+
+    expect(
+      t.addExpense({
+        title: 'Такси',
+        payerId: anya,
+        amount: 1000,
+        currencyCode: 'RUB',
+        split: { mode: 'equal', participantIds: [anya, 'ghost-in-split'] },
+      }),
+    ).toEqual({ ok: false, reason: 'unknown-participant', id: 'ghost-in-split' })
+    expect(t.trip.value?.expenses).toHaveLength(0)
+  })
+
+  it('валюта не из списка поездки — отказ с кодом', async () => {
+    const { t, anya } = await loadTripForExpenses()
+
+    expect(
+      t.addExpense({
+        title: 'Такси',
+        payerId: anya,
+        amount: 1000,
+        currencyCode: 'USD',
+        split: { mode: 'equal', participantIds: [anya] },
+      }),
+    ).toEqual({ ok: false, reason: 'unknown-currency', code: 'USD' })
+    expect(t.trip.value?.expenses).toHaveLength(0)
+  })
+
+  it('exact не покрывает сумму — отказ split-mismatch с положительной дельтой', async () => {
+    const { t, anya, borya } = await loadTripForExpenses()
+
+    expect(
+      t.addExpense({
+        title: 'Продукты',
+        payerId: anya,
+        amount: 1500,
+        currencyCode: 'RUB',
+        split: {
+          mode: 'exact',
+          shares: [
+            { participantId: anya, amount: 700 },
+            { participantId: borya, amount: 700 },
+          ],
+        },
+      }),
+    ).toEqual({ ok: false, reason: 'split-mismatch', delta: 100 })
+    expect(t.trip.value?.expenses).toHaveLength(0)
+  })
+
+  it('exact превышает сумму — отказ split-mismatch с отрицательной дельтой', async () => {
+    const { t, anya, borya } = await loadTripForExpenses()
+
+    expect(
+      t.addExpense({
+        title: 'Продукты',
+        payerId: anya,
+        amount: 1500,
+        currencyCode: 'RUB',
+        split: {
+          mode: 'exact',
+          shares: [
+            { participantId: anya, amount: 800 },
+            { participantId: borya, amount: 800 },
+          ],
+        },
+      }),
+    ).toEqual({ ok: false, reason: 'split-mismatch', delta: -100 })
+    expect(t.trip.value?.expenses).toHaveLength(0)
+  })
+})
+
+describe('расходы: обновление', () => {
+  /** Сцена с одним расходом (equal на двоих), оплаченным Аней. */
+  async function loadTripWithOneExpense() {
+    const { t, anya, borya } = await loadTripForExpenses()
+    const added = t.addExpense({
+      title: 'Такси',
+      payerId: anya,
+      amount: 1000,
+      currencyCode: 'RUB',
+      split: { mode: 'equal', participantIds: [anya, borya] },
+    })
+    if (!added.ok) throw new Error('расход не добавился')
+    return { t, anya, borya, original: added.expense }
+  }
+
+  it('несуществующий id — отказ not-found', async () => {
+    const { t, anya } = await loadTripWithOneExpense()
+
+    expect(
+      t.updateExpense('ghost', {
+        title: 'Продукты',
+        payerId: anya,
+        amount: 1500,
+        currencyCode: 'RUB',
+        split: { mode: 'equal', participantIds: [anya] },
+      }),
+    ).toEqual({ ok: false, reason: 'not-found' })
+  })
+
+  it('сохраняет id и createdAt, заменяет остальные поля', async () => {
+    const { t, anya, borya, original } = await loadTripWithOneExpense()
+
+    const result = t.updateExpense(original.id, {
+      title: '  Продукты  ',
+      payerId: borya,
+      amount: 1500,
+      currencyCode: 'RUB',
+      split: {
+        mode: 'exact',
+        shares: [
+          { participantId: anya, amount: 700 },
+          { participantId: borya, amount: 800 },
+        ],
+      },
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.expense.id).toBe(original.id)
+    expect(result.expense.createdAt).toBe(original.createdAt)
+    expect(result.expense.title).toBe('Продукты')
+    expect(result.expense.payerId).toBe(borya)
+    expect(result.expense.amount).toBe(1500)
+    expect(result.expense.split.mode).toBe('exact')
+    expect(t.trip.value?.expenses).toHaveLength(1)
+    expect(t.trip.value?.expenses[0]).toEqual(result.expense)
+  })
+
+  it('split-mismatch действует и при обновлении — расход не меняется', async () => {
+    const { t, anya, borya, original } = await loadTripWithOneExpense()
+
+    expect(
+      t.updateExpense(original.id, {
+        title: 'Продукты',
+        payerId: anya,
+        amount: 1500,
+        currencyCode: 'RUB',
+        split: {
+          mode: 'exact',
+          shares: [
+            { participantId: anya, amount: 700 },
+            { participantId: borya, amount: 700 },
+          ],
+        },
+      }),
+    ).toEqual({ ok: false, reason: 'split-mismatch', delta: 100 })
+    expect(t.trip.value?.expenses).toHaveLength(1)
+    expect(t.trip.value?.expenses[0]?.title).toBe('Такси')
+    expect(t.trip.value?.expenses[0]?.amount).toBe(1000)
+  })
+})
+
+describe('расходы: удаление', () => {
+  it('удаляет расход по id', async () => {
+    const { t, anya } = await loadTripForExpenses()
+    const first = t.addExpense({
+      title: 'Такси',
+      payerId: anya,
+      amount: 1000,
+      currencyCode: 'RUB',
+      split: { mode: 'equal', participantIds: [anya] },
+    })
+    const second = t.addExpense({
+      title: 'Продукты',
+      payerId: anya,
+      amount: 500,
+      currencyCode: 'RUB',
+      split: { mode: 'equal', participantIds: [anya] },
+    })
+    if (!first.ok || !second.ok) throw new Error('расходы не добавились')
+
+    expect(t.removeExpense(first.expense.id)).toEqual({ ok: true })
+    expect(t.trip.value?.expenses).toHaveLength(1)
+    expect(t.trip.value?.expenses[0]?.id).toBe(second.expense.id)
+  })
+
+  it('повторное удаление того же id — отказ not-found', async () => {
+    const { t, anya } = await loadTripForExpenses()
+    const added = t.addExpense({
+      title: 'Такси',
+      payerId: anya,
+      amount: 1000,
+      currencyCode: 'RUB',
+      split: { mode: 'equal', participantIds: [anya] },
+    })
+    if (!added.ok) throw new Error('расход не добавился')
+
+    expect(t.removeExpense(added.expense.id)).toEqual({ ok: true })
+    expect(t.removeExpense(added.expense.id)).toEqual({ ok: false, reason: 'not-found' })
+    expect(t.trip.value?.expenses).toHaveLength(0)
+  })
+})
+
+describe('расходы: связь с участниками', () => {
+  it('после addExpense плательщик не удаляется — in-use с числом расходов', async () => {
+    const { t, anya } = await loadTripForExpenses()
+    const added = t.addExpense({
+      title: 'Такси',
+      payerId: anya,
+      amount: 1000,
+      currencyCode: 'RUB',
+      split: { mode: 'equal', participantIds: [anya] },
+    })
+    if (!added.ok) throw new Error('расход не добавился')
+
+    expect(t.removeParticipant(anya)).toEqual({
+      ok: false,
+      reason: 'in-use',
+      expenses: 1,
+      payments: 0,
+    })
   })
 })
