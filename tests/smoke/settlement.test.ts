@@ -125,7 +125,12 @@ describe('балансы участников', () => {
     const wrapper = await mountApp()
 
     const rows = balanceTexts(wrapper)
-    expect(rows.map((r) => r.replace(/ .*/, ''))).toEqual(['Аня', 'Боря', 'Вика', 'Гоша'])
+    // Порядок строк и есть сортировка экрана: кредитор, должники, нулевой.
+    expect(rows).toHaveLength(4)
+    expect(rows[0]).toContain('Аня')
+    expect(rows[1]).toContain('Боря')
+    expect(rows[2]).toContain('Вика')
+    expect(rows[3]).toContain('Гоша')
     expect(rows[0]).toContain('должны ему 666,66 RUB')
     expect(rows[1]).toContain('должен 333,33 RUB')
     expect(rows[2]).toContain('должен 333,33 RUB') // равные долги — в порядке участников

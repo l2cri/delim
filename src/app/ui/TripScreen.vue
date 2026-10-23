@@ -5,6 +5,7 @@ import { TRIP_LIMITS } from '../../core'
 import { plural } from './format'
 import ExpensesCard from './ExpensesCard.vue'
 import type { ExpenseEditor } from './ExpensesCard.vue'
+import SettlementCard from './SettlementCard.vue'
 import {
   useTrip,
   type AddParticipantResult,
@@ -338,6 +339,8 @@ function removeExpenseFromList(expense: Expense): void {
         @cancel="cancelExpense"
       />
 
+      <SettlementCard :trip="trip" />
+
       <p
         v-if="notice"
         role="alert"
@@ -355,8 +358,7 @@ function removeExpenseFromList(expense: Expense): void {
         class="rounded-2xl border border-dashed border-zinc-300 p-5 text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400"
         aria-label="Что дальше"
       >
-        Дальше — курсы валют и минимальные переводы. Эти разделы появятся в
-        следующих обновлениях.
+        Дальше — курсы валют и выплаты. Эти разделы появятся в следующих обновлениях.
       </section>
     </main>
 
