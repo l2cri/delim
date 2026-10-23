@@ -12,14 +12,20 @@ export type Route =
   | { name: 'archive' }
   | { name: 'viewer'; payload: string }
 
+// Литералы хэшей — по одному месту на маршрут: разбор и сборка читают константы,
+// а не дублируют строки (рассинхрон стал бы битой навигацией).
+const HOME_HASH = '#/'
+const ARCHIVE_HASH = '#/archive'
+const VIEWER_PREFIX = '#/t='
+
 /**
  * Разбор хэша в маршрут. Неизвестный хэш — home: приложение не падает на
  * устаревшей или битой ссылке, а показывает главный экран.
  */
 export function parseHash(hash: string): Route {
-  if (hash === '#/archive') return { name: 'archive' }
-  if (hash.startsWith('#/t=')) {
-    return { name: 'viewer', payload: hash.slice('#/t='.length) }
+  if (hash === ARCHIVE_HASH) return { name: 'archive' }
+  if (hash.startsWith(VIEWER_PREFIX)) {
+    return { name: 'viewer', payload: hash.slice(VIEWER_PREFIX.length) }
   }
   return { name: 'home' }
 }
@@ -31,16 +37,12 @@ window.addEventListener('hashchange', () => {
 })
 
 function navigate(next: Route): void {
-  switch (next.name) {
-    case 'home':
-      window.location.hash = '#/'
-      break
-    case 'archive':
-      window.location.hash = '#/archive'
-      break
-    case 'viewer':
-      window.location.hash = `#/t=${next.payload}`
-      break
+  if (next.name === 'archive') {
+    window.location.hash = ARCHIVE_HASH
+  } else if (next.name === 'viewer') {
+    window.location.hash = VIEWER_PREFIX + next.payload
+  } else {
+    window.location.hash = HOME_HASH
   }
 }
 

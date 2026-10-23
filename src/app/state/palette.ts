@@ -59,7 +59,8 @@ function countUses(used: readonly string[]): Map<string, number> {
  */
 export function pickLeastUsed(palette: readonly string[], used: readonly string[]): string {
   const counts = countUses(used)
-  let best: string | undefined
+  // Палитры непусты по построению; пустой вход — пустая строка, без cast-обмана типов.
+  let best = ''
   let bestCount = Number.POSITIVE_INFINITY
   for (const value of palette) {
     const count = counts.get(value) ?? 0
@@ -68,7 +69,7 @@ export function pickLeastUsed(palette: readonly string[], used: readonly string[
       bestCount = count
     }
   }
-  return best as string
+  return best
 }
 
 /**
