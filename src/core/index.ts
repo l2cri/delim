@@ -1,5 +1,8 @@
 // Публичный интерфейс ядра «Делим». Операции: схема, калькулятор, балансы;
-// остальные (settle, codec) войдут здесь же.
+// остальные (settle, codec) войдут здесь же. Рамка «пять операций» неизменна:
+// splitAmounts и convertToBase — производные денежные отображения тех же правил
+// (доли расхода до сохранения и конвертация суммы для показа), а не шестая
+// операция: то же вычисление, что в балансах, только для экрана.
 export type {
   LimitName,
   Participant,
@@ -17,3 +20,5 @@ export type { EvalResult } from './calculator'
 export { evalExpr } from './calculator'
 export type { BalanceEntry } from './balances'
 export { computeBalances } from './balances'
+export type { SplitAmount } from './splits'
+export { splitAmounts, convertToBase } from './splits'
