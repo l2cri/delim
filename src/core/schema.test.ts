@@ -280,7 +280,10 @@ describe('parseTripState: повреждённый стейт (kind damaged)', (
   })
 
   it('дубликат id выплаты', () => {
-    expectRejected(jsonWithFault((s) => { s.payments[0].id = 'v1' }), 'damaged')
+    expectRejected(jsonWithFault((s) => {
+      s.payments.push({ id: 'v2', fromId: 'p3', toId: 'p1', amount: 1000, currencyCode: 'RUB' })
+      s.payments[1].id = 'v1'
+    }), 'damaged')
   })
 
   it('дубликат кода валюты', () => {
