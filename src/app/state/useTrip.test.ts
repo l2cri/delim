@@ -2,15 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createNewTrip, parseTripState } from '../../core'
 import type { TripState } from '../../core'
 import { PALETTE_COLORS, PALETTE_EMOJI } from './palette'
+import { STORAGE_KEY } from './storage'
+import { flushWatchers } from '../../../tests/helpers/flushWatchers'
 
-const STORAGE_KEY = 'delim:active-trip'
 const ISO = '2026-10-01T10:00:00.000Z'
-
-/** Слив микрозадач: даёт отработать watch-колбэкам Vue независимо от копии фреймворка. */
-async function flushWatchers(): Promise<void> {
-  await Promise.resolve()
-  await Promise.resolve()
-}
 
 /** Свежий синглтон на тест: сброс реестра модулей + динамический импорт = «перезагрузка». */
 async function loadUseTrip() {

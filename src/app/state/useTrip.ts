@@ -3,6 +3,8 @@ import type { Ref } from 'vue'
 import { createNewTrip, parseTripState, TRIP_LIMITS } from '../../core'
 import type { Participant, Split, TripParseError, TripState } from '../../core'
 import { PALETTE_COLORS, PALETTE_EMOJI, pickLeastUsed, pickLeastUsedRandom } from './palette'
+import { clearStoredTrip, readStoredTrip, writeStoredTrip } from './storage'
+import { isBlank } from './validation'
 
 /**
  * Единственный владелец мутируемого стейта поездки (ADR 0009: композабл без Pinia).
@@ -11,7 +13,6 @@ import { PALETTE_COLORS, PALETTE_EMOJI, pickLeastUsed, pickLeastUsedRandom } fro
  * через эти мутации и никогда не знают о хранилище.
  */
 
-const STORAGE_KEY = 'delim:active-trip'
 const SAVE_DEBOUNCE_MS = 500
 
 export type CreateTripResult =
@@ -38,7 +39,7 @@ const trip = ref<TripState | null>(null)
 const loadError = ref<TripParseError | null>(null)
 
 {
-  const raw = localStorage.getItem(STORAGE_KEY)
+  const raw = readStoredTrip()
   if (raw !== null && raw !== '') {
     const parsed = parseTripState(raw)
     if (parsed.ok) {
@@ -58,9 +59,7 @@ function flushSave(): void {
     clearTimeout(saveTimer)
     saveTimer = null
   }
-  if (trip.value !== null) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(trip.value))
-  }
+  if (trip.value !== null) writeStoredTrip(trip.value)
 }
 
 watch(
@@ -69,9 +68,7 @@ watch(
     if (saveTimer !== null) clearTimeout(saveTimer)
     saveTimer = setTimeout(() => {
       saveTimer = null
-      if (trip.value !== null) {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(trip.value))
-      }
+      if (trip.value !== null) writeStoredTrip(trip.value)
     }, SAVE_DEBOUNCE_MS)
   },
   { deep: true },
@@ -89,31 +86,25 @@ function findParticipant(id: string): Participant | undefined {
   return trip.value?.participants.find((p) => p.id === id)
 }
 
-/** Участник упомянут в сплите — в любом из трёх режимов. */
+/** Участник упомянут в сплите — в любом из трёх режимов: equal списком id,
+ * точные суммы и доли — одним и тем же списком долей. */
 function splitMentions(split: Split, id: string): boolean {
-  switch (split.mode) {
-    case 'equal':
-      return split.participantIds.includes(id)
-    case 'exact':
-      return split.shares.some((s) => s.participantId === id)
-    case 'shares':
-      return split.shares.some((s) => s.participantId === id)
-  }
+  if (split.mode === 'equal') return split.participantIds.includes(id)
+  return split.shares.some((s) => s.participantId === id)
 }
 
 function createTrip(input: { name: string; baseCurrency: string }): CreateTripResult {
-  const name = input.name.trim()
-  if (!name) return { ok: false, reason: 'empty-name' }
-  const baseCurrency = input.baseCurrency.trim()
-  if (!baseCurrency) return { ok: false, reason: 'empty-currency' }
-  trip.value = createNewTrip({ name, baseCurrency })
+  if (isBlank(input.name)) return { ok: false, reason: 'empty-name' }
+  if (isBlank(input.baseCurrency)) return { ok: false, reason: 'empty-currency' }
+  // Обрезку пробелов делает ядро (createNewTrip); здесь только типизированный отказ.
+  trip.value = createNewTrip(input)
   loadError.value = null
   return { ok: true }
 }
 
 function addParticipant(name: string): AddParticipantResult {
+  if (isBlank(name)) return { ok: false, reason: 'empty-name' }
   const trimmed = name.trim()
-  if (!trimmed) return { ok: false, reason: 'empty-name' }
   const current = requireTrip()
   if (current.participants.length >= TRIP_LIMITS.participants) {
     return { ok: false, reason: 'limit', max: TRIP_LIMITS.participants }
@@ -135,8 +126,8 @@ function addParticipant(name: string): AddParticipantResult {
 }
 
 function renameParticipant(id: string, name: string): RenameParticipantResult {
+  if (isBlank(name)) return { ok: false, reason: 'empty-name' }
   const trimmed = name.trim()
-  if (!trimmed) return { ok: false, reason: 'empty-name' }
   requireTrip()
   const participant = findParticipant(id)
   if (!participant) return { ok: false, reason: 'not-found' }
@@ -179,7 +170,7 @@ function regenerateAvatar(id: string): void {
 }
 
 function discardCorrupted(): void {
-  localStorage.removeItem(STORAGE_KEY)
+  clearStoredTrip()
   loadError.value = null
 }
 
