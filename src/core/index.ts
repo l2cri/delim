@@ -2,7 +2,10 @@
 // сведение; кодек войдёт здесь же. Рамка «пять операций» неизменна:
 // splitAmounts и convertToBase — производные денежные отображения тех же правил
 // (доли расхода до сохранения и конвертация суммы для показа), а не шестая
-// операция: то же вычисление, что в балансах, только для экрана.
+// операция: то же вычисление, что в балансах, только для экрана. Туда же
+// parseRate — производный денежный разбор той же рамки, входная сторона к
+// convertToBase (настройки вводят курс дробью — ядро даёт точное рациональное),
+// по прецеденту splitAmounts/convertToBase из тикета 09.
 export type {
   LimitName,
   Participant,
@@ -24,3 +27,5 @@ export type { Transfer } from './settle'
 export { settle } from './settle'
 export type { SplitAmount } from './splits'
 export { splitAmounts, convertToBase } from './splits'
+export type { ParseRateResult } from './rates'
+export { parseRate } from './rates'
