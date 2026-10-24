@@ -238,7 +238,7 @@ function submitRateEdit(): void {
           placeholder="Своя валюта, код"
           maxlength="5"
           aria-label="Код валюты"
-          class="w-32 rounded-xl border border-zinc-200 bg-white px-3 py-3 text-sm uppercase text-zinc-900 outline-none transition-colors placeholder:normal-case placeholder:text-zinc-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
+          class="w-32 rounded-xl border border-zinc-200 bg-white px-3 py-3 text-sm uppercase text-zinc-900 outline-none transition-colors placeholder:normal-case placeholder:text-zinc-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500"
           @change="applyCustom"
           @keyup.enter="applyCustom"
         />

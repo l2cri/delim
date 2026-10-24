@@ -2,7 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [master]
+    # WORKFLOW.md обещает CI на каждый пуш в ветки и master: тест-ветка тикета
+    # проверяется до мержа, а не только master после него.
+    branches: ["**"]
   pull_request:
 
 jobs:
