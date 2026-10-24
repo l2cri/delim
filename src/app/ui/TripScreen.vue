@@ -6,6 +6,7 @@ import { plural } from './format'
 import CurrenciesCard from './CurrenciesCard.vue'
 import ExpensesCard from './ExpensesCard.vue'
 import type { ExpenseEditor } from './ExpensesCard.vue'
+import SettlementCard from './SettlementCard.vue'
 import {
   useTrip,
   type AddCurrencyResult,
@@ -434,6 +435,8 @@ function removeCurrencyIntent(code: string): void {
         @cancel="currencyAdding = false; notice = null"
       />
 
+      <SettlementCard :trip="trip" />
+
       <p
         v-if="notice"
         role="alert"
@@ -451,7 +454,7 @@ function removeCurrencyIntent(code: string): void {
         class="rounded-2xl border border-dashed border-zinc-300 p-5 text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400"
         aria-label="Что дальше"
       >
-        Дальше — балансы и минимальные переводы. Эти разделы появятся в
+        Дальше — выплаты, граф долгов и квитанция. Эти разделы появятся в
         следующих обновлениях.
       </section>
     </main>
