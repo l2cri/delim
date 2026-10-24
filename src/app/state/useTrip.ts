@@ -11,7 +11,14 @@ import type {
   TripState,
 } from '../../core'
 import { PALETTE_COLORS, PALETTE_EMOJI, pickLeastUsed, pickLeastUsedRandom } from './palette'
-import { clearStoredTrip, readStoredTrip, writeStoredTrip } from './storage'
+import {
+  clearArchivedTrip,
+  clearStoredTrip,
+  readArchivedTrip,
+  readStoredTrip,
+  writeArchivedTrip,
+  writeStoredTrip,
+} from './storage'
 import { isBlank, splitDelta } from './validation'
 
 /**
@@ -26,6 +33,13 @@ const SAVE_DEBOUNCE_MS = 500
 export type CreateTripResult =
   | { ok: true }
   | { ok: false; reason: 'empty-name' | 'empty-currency' }
+
+/** Завершение: успех либо причина отказа. Участники сами по себе не делают
+ *  поездку архивопригодной — «ничего архивировать» отличимо от «поездки нет». */
+export type FinishTripResult =
+  | { ok: true }
+  | { ok: false; reason: 'no-trip' }
+  | { ok: false; reason: 'nothing-to-archive' }
 
 export type AddParticipantResult =
   | { ok: true; participant: Participant }
@@ -104,6 +118,10 @@ export type RemoveCurrencyResult =
 // на одни и те же refs — один способ хранения, один автосейв.
 const trip = ref<TripState | null>(null)
 const loadError = ref<TripParseError | null>(null)
+// Архив (ADR 0002) — только чтение: мутаций архивного стейта нет, кроме замены
+// при завершении следующей поездки и затирания при старте новой.
+const archivedTrip = ref<TripState | null>(null)
+const archiveLoadError = ref<TripParseError | null>(null)
 
 {
   const raw = readStoredTrip()
@@ -114,6 +132,16 @@ const loadError = ref<TripParseError | null>(null)
     } else {
       // Повреждённые или чужие данные не роняют приложение: экран покажет причину.
       loadError.value = parsed.error
+    }
+  }
+  // Архив — независимый ключ: сломанный архив не мешает загрузке активной поездки.
+  const rawArchive = readArchivedTrip()
+  if (rawArchive !== null && rawArchive !== '') {
+    const parsed = parseTripState(rawArchive)
+    if (parsed.ok) {
+      archivedTrip.value = parsed.state
+    } else {
+      archiveLoadError.value = parsed.error
     }
   }
 }
@@ -172,6 +200,12 @@ function createTrip(input: { name: string; baseCurrency: string }): CreateTripRe
   // Обрезку пробелов делает ядро (createNewTrip); здесь только типизированный отказ.
   trip.value = createNewTrip(input)
   loadError.value = null
+  // Старт следующей поездки затирает архив (ADR 0002). Только после успеха:
+  // при отказе прежний архив не трогаем — поездка не началась, право на замену
+  // не заработано. Ошибку архивного разбора гасим вместе с ключом.
+  clearArchivedTrip()
+  archivedTrip.value = null
+  archiveLoadError.value = null
   return { ok: true }
 }
 
@@ -450,9 +484,51 @@ function discardCorrupted(): void {
   loadError.value = null
 }
 
+/**
+ * Завершение поездки: активная уходит в архив глубины 1 (ADR 0002). Порядок
+ * записей строгий: СНАЧАЛА архив (хранилище + ref), ПОТОМ обнуление активной —
+ * иначе отказ хранилища на полпути оставил бы приложение «ни активной, ни архивной».
+ * Отложенный дебаунсом автосейв безопасен: его колбэк пишет только при живой поездке.
+ */
+function finishTrip(): FinishTripResult {
+  const current = trip.value
+  if (current === null) return { ok: false, reason: 'no-trip' }
+  // Пустая поездка (участники не в счёт) не архивируется — мусорный архив глубины 1
+  // не создаём, UI по этому отказу предложит удаление (буква тикета).
+  if (current.expenses.length === 0 && current.payments.length === 0) {
+    return { ok: false, reason: 'nothing-to-archive' }
+  }
+  current.status = 'completed'
+  writeArchivedTrip(current)
+  archivedTrip.value = current
+  archiveLoadError.value = null
+  trip.value = null
+  clearStoredTrip()
+  return { ok: true }
+}
+
+/**
+ * Аварийный выход мимо архива: поездка удаляется целиком (капкан ошибочно
+ * созданной поездки). Архивный ключ не трогается — предыдущая завершённая
+ * поездка не должна страдать за ошибки текущей. Без поездки — тихий no-op
+ * (образец — regenerateAvatar): кнопка не обязана знать, жива ли поездка.
+ */
+function deleteTrip(): void {
+  if (trip.value === null) return
+  trip.value = null
+  clearStoredTrip()
+}
+
+function discardCorruptedArchive(): void {
+  clearArchivedTrip()
+  archiveLoadError.value = null
+}
+
 export function useTrip(): {
   trip: Readonly<Ref<TripState | null>>
   loadError: Readonly<Ref<TripParseError | null>>
+  archivedTrip: Readonly<Ref<TripState | null>>
+  archiveLoadError: Readonly<Ref<TripParseError | null>>
   createTrip(input: { name: string; baseCurrency: string }): CreateTripResult
   addParticipant(name: string): AddParticipantResult
   renameParticipant(id: string, name: string): RenameParticipantResult
@@ -468,10 +544,15 @@ export function useTrip(): {
   removeCurrency(code: string): RemoveCurrencyResult
   regenerateAvatar(id: string): void
   discardCorrupted(): void
+  finishTrip(): FinishTripResult
+  deleteTrip(): void
+  discardCorruptedArchive(): void
 } {
   return {
     trip,
     loadError,
+    archivedTrip,
+    archiveLoadError,
     createTrip,
     addParticipant,
     renameParticipant,
@@ -487,5 +568,8 @@ export function useTrip(): {
     removeCurrency,
     regenerateAvatar,
     discardCorrupted,
+    finishTrip,
+    deleteTrip,
+    discardCorruptedArchive,
   }
 }

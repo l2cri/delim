@@ -4,6 +4,7 @@ import type { Expense, Participant, Payment, Rational } from '../../core'
 import { TRIP_LIMITS, encodeTripState, SHARE_PAYLOAD_WARN } from '../../core'
 import { plural } from './format'
 import { writeToClipboard } from './clipboard'
+import ConfirmDialog from './ConfirmDialog.vue'
 import CurrenciesCard from './CurrenciesCard.vue'
 import DebtGraphCard from './DebtGraphCard.vue'
 import ExpensesCard from './ExpensesCard.vue'
@@ -45,6 +46,8 @@ const {
   addCurrency,
   updateCurrencyRate,
   removeCurrency,
+  finishTrip,
+  deleteTrip,
 } = useTrip()
 
 const participants = computed(() => trip.value?.participants ?? [])
@@ -364,6 +367,75 @@ function removeCurrencyIntent(code: string): void {
     showNotice('error', describeRemoveCurrencyRefusal(code, result))
   }
 }
+
+// Завершение и удаление (тикет 16): ровно один диалог в каждый момент —
+// завершение с данными, завершение пустой (предлагаем удаление) или удаление.
+const confirmDialog = ref<null | 'finish' | 'finish-empty' | 'delete'>(null)
+
+/** Есть ли что архивировать: участники сами по себе архив не наполняют (useTrip). */
+const hasAccounting = computed(
+  () => (trip.value?.expenses.length ?? 0) > 0 || (trip.value?.payments.length ?? 0) > 0,
+)
+
+const finishDescription = computed(
+  () =>
+    `Поездка «${trip.value?.name ?? ''}» уйдёт в архив и станет доступной только для чтения. Балансы, квитанция и граф останутся в архиве. Начало новой поездки заменит архив.`,
+)
+
+/** Что потеряется при удалении: счётчики со склонением («1 расход, 2 выплаты» —
+ *  винительный падеж, «потеряны … кого/что»), перечисление «A, B и C»; пустой
+ *  поездке счётчики не нужны. Формы множественного числа — plural из ./format. */
+const deleteDescription = computed(() => {
+  const current = trip.value
+  if (!current) return ''
+  const counts: Array<[number, string, string, string]> = [
+    [current.participants.length, 'участника', 'участника', 'участников'],
+    [current.expenses.length, 'расход', 'расхода', 'расходов'],
+    [current.payments.length, 'выплату', 'выплаты', 'выплат'],
+  ]
+  const items = counts
+    .filter(([count]) => count > 0)
+    .map(([count, one, few, many]) => `${count} ${plural(count, one, few, many)}`)
+  if (items.length === 0) return 'Поездка пуста — расходов, выплат и участников нет.'
+  const list =
+    items.length === 1
+      ? items[0]
+      : `${items.slice(0, -1).join(', ')} и ${items[items.length - 1]}`
+  return `Будут потеряны навсегда: ${list}. В архив поездка не попадёт.`
+})
+
+function openFinish(): void {
+  confirmDialog.value = hasAccounting.value ? 'finish' : 'finish-empty'
+  notice.value = null
+}
+
+function cancelConfirm(): void {
+  confirmDialog.value = null
+}
+
+// Подтверждение завершения: стейт сам перенесёт поездку в архив и обнулит
+// активную — экран сменится на создание без участия UI.
+function confirmFinish(): void {
+  confirmDialog.value = null
+  const result = finishTrip()
+  if (result.ok) return
+  if (result.reason === 'nothing-to-archive') {
+    // За время открытого диалога всё удалили — рассинхрон с проверкой открытия.
+    // Честно объясняем и предлагаем тот же выход, что пустой поездке (буква тикета).
+    showNotice('info', 'Расходов и выплат нет — архивировать нечего')
+    confirmDialog.value = 'delete'
+    return
+  }
+  // 'no-trip': поездки уже нет — экран создания смонтируется сам.
+}
+
+// Пустую поездку не архивируем (мусорный архив глубины 1 не создаём) — диалог
+// предлагает единственный осмысленный выход: удалить целиком. Явное удаление
+// из «опасной зоны» — тот же вызов, разница только в тексте подтверждения.
+function confirmDelete(): void {
+  confirmDialog.value = null
+  deleteTrip()
+}
 </script>
 
 <template>
@@ -560,6 +632,36 @@ function removeCurrencyIntent(code: string): void {
 
       <ReceiptCard :trip="trip" />
 
+      <section
+        class="space-y-4 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+        aria-labelledby="finish-heading"
+      >
+        <h2 id="finish-heading" class="font-medium">Завершение поездки</h2>
+        <p class="text-sm text-zinc-500 dark:text-zinc-400">
+          Завершите поездку, когда все расчёты закрыты — она уйдёт в архив только для чтения.
+        </p>
+        <button
+          type="button"
+          class="w-full rounded-xl bg-emerald-600 px-4 py-3 font-medium text-white"
+          @click="openFinish"
+        >
+          Завершить поездку
+        </button>
+
+        <div class="space-y-4 border-t border-zinc-200 pt-4 dark:border-zinc-800">
+          <p class="text-sm text-zinc-500 dark:text-zinc-400">
+            Поездка создана по ошибке? Удалите её целиком, минуя архив.
+          </p>
+          <button
+            type="button"
+            class="w-full rounded-xl border border-red-300 px-4 py-3 font-medium text-red-600 transition-colors hover:bg-red-50 dark:border-red-500/40 dark:text-red-400 dark:hover:bg-red-950/30"
+            @click="confirmDialog = 'delete'; notice = null"
+          >
+            Удалить поездку
+          </button>
+        </div>
+      </section>
+
       <p
         v-if="notice"
         role="alert"
@@ -579,6 +681,34 @@ function removeCurrencyIntent(code: string): void {
     <footer class="px-5 pb-6 text-center text-xs text-zinc-400 dark:text-zinc-600">
       Работает офлайн · данные хранятся только на устройстве
     </footer>
+
+    <ConfirmDialog
+      v-if="confirmDialog === 'finish'"
+      title="Завершить поездку?"
+      :description="finishDescription"
+      confirm-label="Завершить"
+      tone="primary"
+      @confirm="confirmFinish"
+      @cancel="cancelConfirm"
+    />
+    <ConfirmDialog
+      v-else-if="confirmDialog === 'finish-empty'"
+      title="Завершить поездку?"
+      description="Расходов и выплат нет — архивировать нечего. Можно удалить поездку целиком."
+      confirm-label="Удалить поездку"
+      tone="danger"
+      @confirm="confirmDelete"
+      @cancel="cancelConfirm"
+    />
+    <ConfirmDialog
+      v-else-if="confirmDialog === 'delete'"
+      title="Удалить поездку?"
+      :description="deleteDescription"
+      confirm-label="Удалить навсегда"
+      tone="danger"
+      @confirm="confirmDelete"
+      @cancel="cancelConfirm"
+    />
   </div>
 </template>
 
