@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import type { Participant, TripState } from '../../core'
 import { computeBalances, settle } from '../../core'
 import { formatMinor } from './format'
+import { balancePhrase, NO_TRANSFERS_TEXT, type BalanceTone } from './settlement-text'
 
 // Секция «Сведение» — итоги поездки из тикета 11: балансы участников и минимальные
 // переводы. Сведение — производная величина (ADR 0010): computeBalances → settle
@@ -20,21 +21,16 @@ interface BalanceRow {
   amount: number
   order: number
   /** Человекочитаемый баланс: «должны ему 666,66 RUB» / «должен 333,33 RUB» / «в нуле». */
-  label: { text: string; tone: 'credit' | 'debt' | 'zero' }
+  label: { text: string; tone: BalanceTone }
 }
 
 const balances = computed(() => computeBalances(props.trip))
 
-/** Подпись баланса с готовой суммой и тоном цвета: кредит / долг / ноль. */
+/** Подпись баланса с готовой суммой и тоном цвета: кредит / долг / ноль.
+ *  Формулировки — общие с квитанцией (settlement-text), сюда добавляется валюта. */
 function describeBalance(amount: number): BalanceRow['label'] {
-  const currency = props.trip.baseCurrency
-  if (amount > 0) {
-    return { text: `должны ему ${formatMinor(amount)} ${currency}`, tone: 'credit' }
-  }
-  if (amount < 0) {
-    return { text: `должен ${formatMinor(-amount)} ${currency}`, tone: 'debt' }
-  }
-  return { text: 'в нуле', tone: 'zero' }
+  const { text, tone } = balancePhrase(amount)
+  return { text: `${text} ${props.trip.baseCurrency}`, tone }
 }
 
 // Порядок показа: по модулю баланса по убыванию, при равенстве — порядок участников
@@ -149,7 +145,7 @@ const transferRows = computed<TransferRow[]>(() => {
         </li>
       </TransitionGroup>
       <p v-else class="text-sm text-zinc-500 dark:text-zinc-400">
-        Переводов нет — все в нуле
+        {{ NO_TRANSFERS_TEXT }}
       </p>
     </template>
   </section>

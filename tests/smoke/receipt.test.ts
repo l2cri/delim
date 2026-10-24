@@ -10,6 +10,14 @@ import { mountApp, norm, seedTrip, seedWithZeroBalance } from '../helpers/smoke'
  * реестром модулей (тот же паттерн, что в settlement.test.ts).
  */
 
+/** Подмена буфера: копирование уходит в стаб, а не в системный буфер (общий
+ *  приём обоих копирующих тестов, вынесен по P4 ревью #14). */
+function stubClipboard(): ReturnType<typeof vi.fn> {
+  const writeText = vi.fn().mockResolvedValue(undefined)
+  Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+  return writeText
+}
+
 beforeEach(() => {
   vi.resetModules()
   localStorage.clear()
@@ -53,11 +61,7 @@ describe('предпросмотр квитанции', () => {
 
 describe('копирование в буфер', () => {
   it('тап копирует квитанцию целиком и кнопка отвечает «Скопировано»', async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined)
-    Object.defineProperty(navigator, 'clipboard', {
-      value: { writeText },
-      configurable: true,
-    })
+    const writeText = stubClipboard()
     seedWithZeroBalance()
     const wrapper = await mountApp()
 
@@ -75,11 +79,7 @@ describe('копирование в буфер', () => {
   })
 
   it('квитанция живая: расход добавили — предпросмотр и буфер обновились', async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined)
-    Object.defineProperty(navigator, 'clipboard', {
-      value: { writeText },
-      configurable: true,
-    })
+    const writeText = stubClipboard()
     seedTrip((state) => {
       state.participants.push(
         { id: 'p1', name: 'Аня', color: '#059669', emoji: '🐻' },

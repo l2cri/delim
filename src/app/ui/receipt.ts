@@ -9,22 +9,7 @@
 import type { TripState } from '../../core'
 import { computeBalances, settle } from '../../core'
 import { formatMinor } from './format'
-
-/**
- * Подпись баланса — дословно те же формулировки, что в SettlementCard (квитанция
- * лежит на том же экране — расхождение слов для одного человека заметнее
- * нейтрального «ему»), без суффикса валюты: валюта названа один раз в заголовке
- * блока («Балансы · RUB»).
- */
-function describeBalance(amount: number): string {
-  if (amount > 0) {
-    return `должны ему ${formatMinor(amount)}`
-  }
-  if (amount < 0) {
-    return `должен ${formatMinor(-amount)}`
-  }
-  return 'в нуле'
-}
+import { balancePhrase, NO_TRANSFERS_TEXT } from './settlement-text'
 
 /** «2026-10-01T…» → «01.10.2026»: день берётся прямо из ISO-строки, без
  * new Date — вывод не зависит от таймзоны устройства. */
@@ -81,7 +66,7 @@ export function buildReceipt(trip: TripState): string {
     `Балансы · ${trip.baseCurrency}`,
     ...balances.map((entry) => {
       const name = byId.get(entry.participantId)?.name ?? '—'
-      return `${name} — ${describeBalance(entry.amount)}`
+      return `${name} — ${balancePhrase(entry.amount).text}`
     }),
     '',
     `Переводы · ${trip.baseCurrency}`,
@@ -90,7 +75,7 @@ export function buildReceipt(trip: TripState): string {
           (transfer) =>
             `${byId.get(transfer.fromId)?.name ?? '—'} → ${byId.get(transfer.toId)?.name ?? '—'} ${formatMinor(transfer.amount)}`,
         )
-      : ['Переводов нет — все в нуле']),
+      : [NO_TRANSFERS_TEXT]),
     '```',
   )
   return lines.join('\n')
