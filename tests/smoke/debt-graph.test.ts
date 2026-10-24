@@ -1,73 +1,31 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
 import type { DOMWrapper, VueWrapper } from '@vue/test-utils'
-import { computeBalances, createNewTrip, settle } from '../../src/core'
+import { computeBalances, parseTripState, settle } from '../../src/core'
 import type { TripState } from '../../src/core'
 import { STORAGE_KEY } from '../../src/app/state/storage'
 import { flushWatchers as flush } from '../helpers/flushWatchers'
-
-const ISO = '2026-10-01T10:00:00.000Z'
+import {
+  addEqualExpense,
+  mountApp,
+  mountTripWith,
+  norm,
+  seedTrip,
+  seedWithZeroBalance,
+} from '../helpers/smoke'
 
 /**
  * Дымовые тесты карточки «Граф долгов» (тикет 13): круговая раскладка седения
- * поверх тех же операций ядра, что и экран сведения. Хелперы скопированы из
- * settlement.test.ts сознательно: общего tests/helpers/smoke.ts нет и не будет
- * (параллельная ветка #12), чтобы ветки не конфликтовали. Эталон числа дуг —
- * импорт ядра в самом тесте: граф показывает ровно то, что считает сечение.
+ * поверх тех же операций ядра, что и экран сведения. Общие хелперы — из
+ * tests/helpers/smoke.ts (приехали с #12 при подтяжке master). Эталон числа
+ * дуг — импорт ядра в самом тесте по стейту из хранилища: граф показывает
+ * ровно то, что считает сведение.
  */
-async function mountApp(): Promise<VueWrapper> {
-  const { default: App } = await import('../../src/App.vue')
-  return mount(App)
-}
 
-/** Формат сумм группирует разряды неразрывным пробелом — в ожиданиях это обычный пробел. */
-function norm(text: string): string {
-  return text.replace(/\u00A0/g, ' ')
-}
-
-/** Кладёт в хранилище свежую поездку «Кипр» (RUB) с довеской вызывающего теста;
- *  возвращает тот же стейт — эталон седения считается по нему. */
-function seedTrip(mutate: (state: TripState) => void): TripState {
-  const state = createNewTrip({ name: 'Кипр', baseCurrency: 'RUB' })
-  mutate(state)
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
-  return state
-}
-
-async function addParticipant(wrapper: VueWrapper, name: string): Promise<void> {
-  // happy-dom не поднимает submit по клику кнопки — триггерим форму, как браузер.
-  await wrapper.find('input[placeholder="Имя участника"]').setValue(name)
-  await wrapper.find('form').trigger('submit')
-  await flush()
-}
-
-/** Свежая поездка «Кипр» (RUB) с участниками — через экраны, как это делает пользователь. */
-async function mountTripWith(names: string[]): Promise<VueWrapper> {
-  const wrapper = await mountApp()
-  await wrapper.find('#trip-name').setValue('Кипр')
-  await wrapper.findAll('button').find((b) => b.text().includes('RUB'))!.trigger('click')
-  await wrapper.findAll('button').find((b) => b.text() === 'Создать поездку')!.trigger('click')
-  await flush()
-  for (const name of names) await addParticipant(wrapper, name)
-  return wrapper
-}
-
-/** Добавляет расход поровну между всеми: форма по умолчанию — режим «Поровну». */
-async function addEqualExpense(
-  wrapper: VueWrapper,
-  title: string,
-  amount: string,
-): Promise<void> {
-  await wrapper.findAll('button').find((b) => b.text().includes('Добавить расход'))!.trigger('click')
-  await flush()
-  await wrapper.find('input[placeholder="Название расхода"]').setValue(title)
-  await wrapper.find('input[aria-label="Сумма расхода"]').setValue(amount)
-  const form = wrapper
-    .findAll('form')
-    .find((f) => f.text().includes('Добавить расход') || f.text().includes('Сохранить расход'))
-  if (!form) throw new Error('форма расхода не открыта')
-  await form.trigger('submit')
-  await flush()
+/** Стейт сидированной поездки — тот же, что загрузит приложение (публичный разбор). */
+function storedTrip(): TripState {
+  const parsed = parseTripState(localStorage.getItem(STORAGE_KEY)!)
+  if (!parsed.ok) throw new Error('сид сломан')
+  return parsed.state
 }
 
 /** Ноды графа: группы участников с аватаром, именем и балансом. */
@@ -102,33 +60,10 @@ function arcLabel(arc: DOMWrapper<Element>): string {
   return norm(label)
 }
 
-/** Поездка четырьмя участниками и расходом 1000,00 RUB (плательщица Аня, поровну
- * на троих) — балансы: Аня +666,66, Боря и Вика −333,33, Гоша — ноль
- * (тот же расклад, что в settlement.test.ts). */
-function seedWithZeroBalance(): TripState {
-  return seedTrip((state) => {
-    state.participants.push(
-      { id: 'p1', name: 'Аня', color: '#059669', emoji: '🐻' },
-      { id: 'p2', name: 'Боря', color: '#0284c7', emoji: '🐧' },
-      { id: 'p3', name: 'Вика', color: '#d97706', emoji: '🦊' },
-      { id: 'p4', name: 'Гоша', color: '#dc2626', emoji: '🐺' },
-    )
-    state.expenses.push({
-      id: 'e1',
-      title: 'Ужин',
-      payerId: 'p1',
-      amount: 100000,
-      currencyCode: 'RUB',
-      createdAt: ISO,
-      split: { mode: 'equal', participantIds: ['p1', 'p2', 'p3'] },
-    })
-  })
-}
-
 /** Поездка RUB + EUR (курс 3/1) с Аней и Борей и расходом 100,00 EUR поровну:
  * 300,00 RUB → Аня должна получить 150,00, Боря — отдать 150,00 (суммы дуг — в RUB). */
-function seedEuroTrip(): TripState {
-  return seedTrip((state) => {
+function seedEuroTrip(): void {
+  seedTrip((state) => {
     state.currencies.push({ code: 'EUR', rate: { num: 3, den: 1 } })
     state.participants.push(
       { id: 'p1', name: 'Аня', color: '#059669', emoji: '🐻' },
@@ -140,16 +75,16 @@ function seedEuroTrip(): TripState {
       payerId: 'p1',
       amount: 10000, // 100,00 EUR = 300,00 RUB по курсу 3/1
       currencyCode: 'EUR',
-      createdAt: ISO,
+      createdAt: '2026-10-01T10:00:00.000Z',
       split: { mode: 'equal', participantIds: ['p1', 'p2'] },
     })
   })
 }
 
-/** 20 участников (лимит) с тремя расходами: у всех ненулевые балансы, сечение
+/** 20 участников (лимит) с тремя расходами: у всех ненулевые балансы, сведение
  *  считает жадный слой (> 12 ненулевых — точный не запускается). */
-function seedTwenty(): TripState {
-  return seedTrip((state) => {
+function seedTwenty(): void {
+  seedTrip((state) => {
     const names = [
       'Аня',
       'Боря',
@@ -181,6 +116,7 @@ function seedTwenty(): TripState {
       })
     })
     const ids = names.map((_, i) => `p${i + 1}`)
+    const createdAt = '2026-10-01T10:00:00.000Z'
     state.expenses.push(
       {
         id: 'e1',
@@ -188,7 +124,7 @@ function seedTwenty(): TripState {
         payerId: 'p1',
         amount: 200000,
         currencyCode: 'RUB',
-        createdAt: ISO,
+        createdAt,
         split: { mode: 'equal', participantIds: ids.slice(0, 10) },
       },
       {
@@ -197,7 +133,7 @@ function seedTwenty(): TripState {
         payerId: 'p11',
         amount: 60000,
         currencyCode: 'RUB',
-        createdAt: ISO,
+        createdAt,
         split: { mode: 'equal', participantIds: ids.slice(10) },
       },
       {
@@ -206,7 +142,7 @@ function seedTwenty(): TripState {
         payerId: 'p5',
         amount: 150000,
         currencyCode: 'RUB',
-        createdAt: ISO,
+        createdAt,
         split: { mode: 'equal', participantIds: ids },
       },
     )
@@ -298,11 +234,11 @@ describe('дуги переводов', () => {
   })
 
   it('двадцать участников (лимит): число дуг равно сечению ядра, ничего не падает', async () => {
-    const state = seedTwenty()
+    seedTwenty()
     const wrapper = await mountApp()
 
     expect(graphNodes(wrapper)).toHaveLength(20)
-    const expected = settle(computeBalances(state)).length
+    const expected = settle(computeBalances(storedTrip())).length
     expect(expected).toBeGreaterThan(0)
     const arcs = graphArcs(wrapper)
     expect(arcs).toHaveLength(expected)
