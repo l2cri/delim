@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, useId } from 'vue'
 import type { TripState } from '../../core'
 import { buildReceipt } from './receipt'
 
@@ -12,6 +12,10 @@ const props = defineProps<{
   /** Весь стейт поездки: квитанция производна от участников, расходов, выплат и курсов. */
   trip: TripState
 }>()
+
+// id заголовка уникален на инстанс: карточка живёт и на активной поездке,
+// и в архиве одновременно (архив лишь скрывает активную через v-show).
+const headingId = useId()
 
 /** Честный предпросмотр: весь текст, включая бэктики фенс-блока. */
 const receipt = computed(() => buildReceipt(props.trip))
@@ -76,9 +80,9 @@ onBeforeUnmount(() => {
 <template>
   <section
     class="space-y-4 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
-    aria-labelledby="receipt-heading"
+    :aria-labelledby="headingId"
   >
-    <h2 id="receipt-heading" class="font-medium">Квитанция</h2>
+    <h2 :id="headingId" class="font-medium">Квитанция</h2>
 
     <p class="text-sm text-zinc-500 dark:text-zinc-400">
       Текстовая сводка для мессенджера — скопируйте и отправьте компании.
