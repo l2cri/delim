@@ -81,7 +81,7 @@ function sidesLabel(payment: Payment): string {
       </button>
 
       <p v-if="payments.length === 0" class="text-sm text-zinc-500 dark:text-zinc-400">
-        Пока выплат нет. Когда кто-то вернёт долг, зафиксируйте это здесь.
+        Пока выплат нет. Когда кто-то рассчитается, зафиксируйте выплату здесь.
       </p>
 
       <TransitionGroup

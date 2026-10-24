@@ -76,7 +76,7 @@ export function balanceTexts(wrapper: VueWrapper): string[] {
     .map((li) => norm(li.text()))
 }
 
-/** Строки переводов — нормированные тексты в порядке седения. */
+/** Строки переводов — нормированные тексты в порядке сведения. */
 export function transferTexts(wrapper: VueWrapper): string[] {
   return wrapper
     .find('[aria-label="Список переводов"]')
