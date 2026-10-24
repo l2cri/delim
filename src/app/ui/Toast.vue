@@ -68,22 +68,25 @@ onBeforeUnmount(() => {
     class="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex justify-center px-5 pb-[calc(1rem+env(safe-area-inset-bottom))]"
   >
     <Transition appear name="toast">
-      <button
+      <!-- Роль и aria-live — на обёртку, а не на кнопку: роль на интерактивном
+           элементе перекрывает его семантику «кнопка» для скринридера. Тап —
+           по всей площади тоста: кнопка растянута на карточку целиком. -->
+      <div
         v-if="notice"
-        type="button"
         :role="notice.tone === 'info' ? 'status' : 'alert'"
         :aria-live="notice.tone === 'info' ? 'polite' : 'assertive'"
-        class="pointer-events-auto flex w-full max-w-md items-start gap-3 rounded-2xl border p-4 text-left text-sm shadow-lg"
+        class="pointer-events-auto w-full max-w-md rounded-2xl border p-4 text-sm shadow-lg"
         :class="TONE_CLASSES[notice.tone].card"
-        @click="emit('dismiss')"
       >
-        <span
-          class="mt-1.5 size-2 shrink-0 rounded-full"
-          :class="TONE_CLASSES[notice.tone].dot"
-          aria-hidden="true"
-        ></span>
-        <span>{{ notice.text }}</span>
-      </button>
+        <button type="button" class="flex w-full items-start gap-3 text-left" @click="emit('dismiss')">
+          <span
+            class="mt-1.5 size-2 shrink-0 rounded-full"
+            :class="TONE_CLASSES[notice.tone].dot"
+            aria-hidden="true"
+          ></span>
+          <span>{{ notice.text }}</span>
+        </button>
+      </div>
     </Transition>
   </div>
 </template>

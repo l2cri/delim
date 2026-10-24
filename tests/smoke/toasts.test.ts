@@ -41,12 +41,14 @@ function seedBusyParticipant(): void {
 }
 
 /**
- * Кнопка-тост по роли внутри обёртки Toast.vue. Обёртка — единственный на экране
- * div с классами fixed + pointer-events-none (оверлей ConfirmDialog — fixed без
- * pointer-events-none), так что селектор не спутает тост с диалогом.
+ * Тост по роли внутри обёртки Toast.vue: роль (alert/status) живёт на карточке-диве,
+ * кнопка тапа — внутри неё (роль на интерактивном элементе перекрыла бы «кнопку»).
+ * Обёртка — единственный на экране div с классами fixed + pointer-events-none
+ * (оверлей ConfirmDialog — fixed без pointer-events-none), так что селектор
+ * не спутает тост с диалогом.
  */
 function toast(wrapper: VueWrapper, role: 'alert' | 'status'): DOMWrapper<Element> {
-  return wrapper.find(`div.fixed.pointer-events-none button[role="${role}"]`)
+  return wrapper.find(`div.fixed.pointer-events-none [role="${role}"]`)
 }
 
 /** Кнопка тоста любым ролью — проверка «тоста вообще нет» и его закрытия. */
@@ -85,9 +87,12 @@ describe('тост отказа (error)', () => {
     expect(norm(refusal.text())).toContain('Нельзя удалить «Аня»')
     expect(norm(refusal.text())).toContain('расходе')
 
-    // Тост живёт вне потока страницы: у кнопки приём кликов (pointer-events-auto),
+    // Тост живёт вне потока страницы: у карточки приём кликов (pointer-events-auto),
     // сам тост не вложен в main — закреплён поверх контента, виден без скролла.
+    // Роль — на карточке-диве, внутри остаётся настоящая кнопка тапа.
     expect(refusal.classes()).toContain('pointer-events-auto')
+    expect(refusal.element.tagName).toBe('DIV')
+    expect(refusal.find('button').exists()).toBe(true)
     expect(refusal.element.closest('main')).toBeNull()
 
     wrapper.unmount()
@@ -126,7 +131,8 @@ describe('тост отказа (error)', () => {
 
     const shown = toast(wrapper, 'alert')
     expect(shown.exists()).toBe(true)
-    await shown.trigger('click')
+    // Тап по площади тоста — клик по растянутой на карточку кнопке.
+    await anyToastButton(wrapper).trigger('click')
     await flush()
 
     expect(anyToastButton(wrapper).exists()).toBe(false)
