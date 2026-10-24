@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, useId } from 'vue'
 import type { Participant, TripState } from '../../core'
 import { computeBalances, settle } from '../../core'
 import { formatMinor } from './format'
@@ -14,6 +14,10 @@ const props = defineProps<{
   /** Весь стейт поездки: балансы производны от расходов, выплат и курсов вместе. */
   trip: TripState
 }>()
+
+// id заголовка уникален на инстанс: карточка живёт и на активной поездке,
+// и в архиве одновременно (архив лишь скрывает активную через v-show).
+const headingId = useId()
 
 /** Строка списка балансов: участник, его баланс и место в порядке поездки (тай-брейк). */
 interface BalanceRow {
@@ -78,9 +82,9 @@ const transferRows = computed<TransferRow[]>(() => {
 <template>
   <section
     class="space-y-4 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
-    aria-labelledby="settlement-heading"
+    :aria-labelledby="headingId"
   >
-    <h2 id="settlement-heading" class="font-medium">Сведение</h2>
+    <h2 :id="headingId" class="font-medium">Сведение</h2>
 
     <p v-if="trip.participants.length === 0" class="text-sm text-zinc-500 dark:text-zinc-400">
       Добавьте участников, чтобы увидеть балансы

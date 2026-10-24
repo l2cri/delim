@@ -1,14 +1,17 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useTrip } from '../state/useTrip'
+import { useHashRoute } from '../state/useHashRoute'
 import type { CreateTripResult } from '../state/useTrip'
 import { isBlank } from '../state/validation'
+import ConfirmDialog from './ConfirmDialog.vue'
 import { CURRENCY_SYMBOLS, PRESET_CURRENCIES } from './currencies'
 
 // Пресет популярных валют — общий с настройками поездки (./currencies); произвольный
 // код — вручную. Валюта здесь только выбирается: все деньги считает ядро.
 
-const { createTrip } = useTrip()
+const { createTrip, archivedTrip } = useTrip()
+const { navigate } = useHashRoute()
 
 const name = ref('')
 // Пустая строка — валюта не выбрана; кастомный ввод живёт в том же значении.
@@ -16,8 +19,17 @@ const currency = ref('')
 const customDraft = ref('')
 const error = ref('')
 
+// Замена архива (ADR 0002) — необратимое действие: при занятом архиве создание
+// идёт через подтверждение. Отмена оставляет форму как есть — черновики не теряем.
+const confirmingArchiveReplace = ref(false)
+
 // Правило пустоты — из стейта (validation.ts), то же, что отказывает в createTrip.
 const canCreate = computed(() => !isBlank(name.value) && !isBlank(currency.value))
+
+const archiveReplaceDescription = computed(
+  () =>
+    `Архивная поездка «${archivedTrip.value?.name ?? ''}» удалится навсегда. Если нужны её итоги или квитанция — скопируйте заранее, открыв архив.`,
+)
 
 function selectPreset(code: string): void {
   currency.value = code
@@ -37,6 +49,15 @@ function submit(): void {
   // Сначала коммитим черновик своей валюты: Enter в названии создаёт поездку
   // сразу после ввода кода, без блура поля валюты.
   applyCustom()
+  // Архив затирается только реальным стартом новой поездки — сначала подтверждение.
+  if (archivedTrip.value !== null) {
+    confirmingArchiveReplace.value = true
+    return
+  }
+  createNow()
+}
+
+function createNow(): void {
   const result: CreateTripResult = createTrip({
     name: name.value,
     baseCurrency: currency.value,
@@ -72,6 +93,23 @@ function submit(): void {
           Поровну, точными суммами или долями — в любых валютах с ручными курсами.
           Без регистрации, сервера и сети.
         </p>
+      </section>
+
+      <section
+        v-if="archivedTrip"
+        class="space-y-2 rounded-2xl border border-amber-300 bg-amber-50 p-5 dark:border-amber-500/40 dark:bg-amber-500/10"
+        aria-label="Архив занят"
+      >
+        <p class="text-sm text-amber-800 dark:text-amber-300">
+          В архиве — поездка «{{ archivedTrip.name }}». Создание новой заменит архив.
+        </p>
+        <button
+          type="button"
+          class="text-sm font-medium text-amber-800 underline underline-offset-2 dark:text-amber-300"
+          @click="navigate({ name: 'archive' })"
+        >
+          Открыть архив
+        </button>
       </section>
 
       <section
@@ -147,5 +185,15 @@ function submit(): void {
     <footer class="px-5 pb-6 text-center text-xs text-zinc-400 dark:text-zinc-600">
       Работает офлайн · данные хранятся только на устройстве
     </footer>
+
+    <ConfirmDialog
+      v-if="confirmingArchiveReplace"
+      title="Архив будет заменён"
+      :description="archiveReplaceDescription"
+      confirm-label="Создать поездку"
+      tone="danger"
+      @confirm="confirmingArchiveReplace = false; createNow()"
+      @cancel="confirmingArchiveReplace = false"
+    />
   </div>
 </template>
