@@ -8,6 +8,7 @@ import ExpensesCard from './ExpensesCard.vue'
 import type { ExpenseEditor } from './ExpensesCard.vue'
 import PaymentsCard from './PaymentsCard.vue'
 import type { PaymentEditor } from './PaymentsCard.vue'
+import ReceiptCard from './ReceiptCard.vue'
 import SettlementCard from './SettlementCard.vue'
 import {
   useTrip,
@@ -519,6 +520,8 @@ function removeCurrencyIntent(code: string): void {
 
       <SettlementCard :trip="trip" />
 
+      <ReceiptCard :trip="trip" />
+
       <p
         v-if="notice"
         role="alert"
@@ -536,7 +539,7 @@ function removeCurrencyIntent(code: string): void {
         class="rounded-2xl border border-dashed border-zinc-300 p-5 text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400"
         aria-label="Что дальше"
       >
-        Дальше — граф долгов и квитанция. Эти разделы появятся в
+        Дальше — граф долгов. Этот раздел появится в
         следующих обновлениях.
       </section>
     </main>
