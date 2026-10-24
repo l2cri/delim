@@ -24,6 +24,7 @@ import {
   type SavePaymentResult,
   type UpdateCurrencyRateResult,
 } from '../state/useTrip'
+import { VIEWER_PREFIX } from '../state/useHashRoute'
 import { isBlank } from '../state/validation'
 
 // Экран поездки без бизнес-логики: все правила (лимит, занятость, палитры) —
@@ -78,7 +79,7 @@ function showNotice(tone: Notice['tone'], text: string): void {
 async function shareTrip(): Promise<void> {
   if (!trip.value) return
   const payload = encodeTripState(trip.value)
-  const link = `${window.location.origin}${window.location.pathname}#/t=${payload}`
+  const link = `${window.location.origin}${window.location.pathname}${VIEWER_PREFIX}${payload}`
   const ok = await writeToClipboard(link)
   if (!ok) {
     showNotice('error', 'Не удалось скопировать ссылку')

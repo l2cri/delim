@@ -8,7 +8,7 @@ import PaymentsCard from './PaymentsCard.vue'
 import ReceiptCard from './ReceiptCard.vue'
 import SettlementCard from './SettlementCard.vue'
 
-// Экран зрителя (тикет 15): та же поездка по ссылке-приглашению `#/t=…`, только
+// Экран зрителя (тикет 15): та же поездка по ссылке поездки `#/t=…`, только
 // чтение. Структура и визуальный язык — TripScreen; все управляющие элементы
 // заменены readonly-режимами карточек. Компонент ничего не считает и не мутирует:
 // стейт приходит готовым (декодированным из ссылки), здесь — только показ.
@@ -53,7 +53,7 @@ const limit = TRIP_LIMITS.participants
 
     <main class="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-5 py-6">
       <p class="text-sm text-zinc-500 dark:text-zinc-400">
-        Поездка открыта по ссылке-приглашению — смотрите, но не редактируйте
+        Поездка открыта по ссылке — смотрите, но не редактируйте
       </p>
 
       <section
