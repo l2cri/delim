@@ -780,6 +780,222 @@ describe('расходы: связь с участниками', () => {
   })
 })
 
+describe('выплаты: добавление', () => {
+  it('добавляет выплату в базовой валюте поездки, id заполнен и уникален', async () => {
+    const { t, anya, borya } = await loadTripForExpenses()
+
+    const first = t.addPayment({ fromId: borya, toId: anya, amount: 2000 })
+    const second = t.addPayment({ fromId: anya, toId: borya, amount: 500 })
+
+    expect(first.ok).toBe(true)
+    expect(second.ok).toBe(true)
+    if (!first.ok || !second.ok) return
+    expect(first.payment.fromId).toBe(borya)
+    expect(first.payment.toId).toBe(anya)
+    expect(first.payment.amount).toBe(2000)
+    // Валюта не выбирается — мутация всегда пишет базовую валюту поездки (SPEC).
+    expect(first.payment.currencyCode).toBe('RUB')
+    expect(second.payment.currencyCode).toBe('RUB')
+    expect(second.payment.id).not.toBe(first.payment.id)
+    expect(t.trip.value?.payments).toEqual([first.payment, second.payment])
+  })
+
+  it('сумма ноль, отрицательная или дробная — отказ bad-amount', async () => {
+    const { t, anya, borya } = await loadTripForExpenses()
+
+    for (const amount of [0, -5, 1.5]) {
+      expect(t.addPayment({ fromId: borya, toId: anya, amount })).toEqual({
+        ok: false,
+        reason: 'bad-amount',
+      })
+    }
+    expect(t.trip.value?.payments).toHaveLength(0)
+  })
+
+  it('отправитель совпадает с получателем — отказ same-participant', async () => {
+    const { t, anya } = await loadTripForExpenses()
+
+    expect(t.addPayment({ fromId: anya, toId: anya, amount: 1000 })).toEqual({
+      ok: false,
+      reason: 'same-participant',
+    })
+    expect(t.trip.value?.payments).toHaveLength(0)
+  })
+
+  it('неизвестный отправитель или получатель — отказ с id призрака', async () => {
+    const { t, anya, borya } = await loadTripForExpenses()
+
+    expect(t.addPayment({ fromId: 'ghost-from', toId: anya, amount: 1000 })).toEqual({
+      ok: false,
+      reason: 'unknown-participant',
+      id: 'ghost-from',
+    })
+    expect(t.addPayment({ fromId: borya, toId: 'ghost-to', amount: 1000 })).toEqual({
+      ok: false,
+      reason: 'unknown-participant',
+      id: 'ghost-to',
+    })
+    expect(t.trip.value?.payments).toHaveLength(0)
+  })
+
+  it('двухсотая выплата добавляется, двести первая — отказ с лимитом 200', async () => {
+    const { t, anya, borya } = await loadTripForExpenses()
+
+    for (let i = 1; i <= 200; i++) {
+      const added = t.addPayment({ fromId: borya, toId: anya, amount: 10 })
+      if (!added.ok) throw new Error(`выплата ${i} не добавилась`)
+    }
+
+    expect(t.addPayment({ fromId: anya, toId: borya, amount: 10 })).toEqual({
+      ok: false,
+      reason: 'limit',
+      max: 200,
+    })
+    expect(t.trip.value?.payments).toHaveLength(200)
+  })
+
+  it('обновление существующей выплаты не триггерит лимит', async () => {
+    const { t, anya, borya } = await loadTripForExpenses()
+    let firstId = ''
+    for (let i = 1; i <= 200; i++) {
+      const added = t.addPayment({ fromId: borya, toId: anya, amount: 10 })
+      if (!added.ok) throw new Error(`выплата ${i} не добавилась`)
+      if (i === 1) firstId = added.payment.id
+    }
+
+    const updated = t.updatePayment(firstId, { fromId: anya, toId: borya, amount: 9999 })
+
+    expect(updated.ok).toBe(true)
+    expect(t.trip.value?.payments).toHaveLength(200)
+  })
+})
+
+describe('выплаты: обновление', () => {
+  /** Сцена с одной выплатой (Боря→Аня 1000 минорных). */
+  async function loadTripWithOnePayment() {
+    const { t, anya, borya } = await loadTripForExpenses()
+    const added = t.addPayment({ fromId: borya, toId: anya, amount: 1000 })
+    if (!added.ok) throw new Error('выплата не добавилась')
+    return { t, anya, borya, original: added.payment }
+  }
+
+  it('несуществующий id — отказ not-found', async () => {
+    const { t, anya, borya } = await loadTripWithOnePayment()
+
+    expect(t.updatePayment('ghost', { fromId: borya, toId: anya, amount: 500 })).toEqual({
+      ok: false,
+      reason: 'not-found',
+    })
+  })
+
+  it('сохраняет id, заменяет отправителя, получателя и сумму', async () => {
+    const { t, anya, borya, original } = await loadTripWithOnePayment()
+
+    const result = t.updatePayment(original.id, { fromId: anya, toId: borya, amount: 2500 })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.payment.id).toBe(original.id)
+    expect(result.payment.fromId).toBe(anya)
+    expect(result.payment.toId).toBe(borya)
+    expect(result.payment.amount).toBe(2500)
+    expect(result.payment.currencyCode).toBe('RUB')
+    expect(t.trip.value?.payments).toHaveLength(1)
+    expect(t.trip.value?.payments[0]).toEqual(result.payment)
+  })
+
+  it('bad-amount и same-participant действуют и при обновлении — запись не меняется', async () => {
+    const { t, anya, borya, original } = await loadTripWithOnePayment()
+
+    expect(t.updatePayment(original.id, { fromId: borya, toId: anya, amount: 1.5 })).toEqual({
+      ok: false,
+      reason: 'bad-amount',
+    })
+    expect(t.updatePayment(original.id, { fromId: anya, toId: anya, amount: 500 })).toEqual({
+      ok: false,
+      reason: 'same-participant',
+    })
+    expect(t.trip.value?.payments).toHaveLength(1)
+    expect(t.trip.value?.payments[0]).toEqual(original)
+  })
+})
+
+describe('выплаты: удаление', () => {
+  it('удаляет выплату по id', async () => {
+    const { t, anya, borya } = await loadTripForExpenses()
+    const first = t.addPayment({ fromId: borya, toId: anya, amount: 2000 })
+    const second = t.addPayment({ fromId: anya, toId: borya, amount: 500 })
+    if (!first.ok || !second.ok) throw new Error('выплаты не добавились')
+
+    expect(t.removePayment(first.payment.id)).toEqual({ ok: true })
+    expect(t.trip.value?.payments).toHaveLength(1)
+    expect(t.trip.value?.payments[0]?.id).toBe(second.payment.id)
+  })
+
+  it('повторное удаление того же id — отказ not-found', async () => {
+    const { t, anya, borya } = await loadTripForExpenses()
+    const added = t.addPayment({ fromId: borya, toId: anya, amount: 2000 })
+    if (!added.ok) throw new Error('выплата не добавилась')
+
+    expect(t.removePayment(added.payment.id)).toEqual({ ok: true })
+    expect(t.removePayment(added.payment.id)).toEqual({ ok: false, reason: 'not-found' })
+    expect(t.trip.value?.payments).toHaveLength(0)
+  })
+})
+
+describe('выплаты: пересчёт сведения на лету', () => {
+  /** Сцена: расход 100,00 (10000 минорных) платит Аня поровну на двоих с Борей. */
+  async function loadTripWithSharedExpense() {
+    const { t, anya, borya } = await loadTripForExpenses()
+    const added = t.addExpense({
+      title: 'Ужин',
+      payerId: anya,
+      amount: 10000,
+      currencyCode: 'RUB',
+      split: { mode: 'equal', participantIds: [anya, borya] },
+    })
+    if (!added.ok) throw new Error('расход не добавился')
+    return { t, anya, borya }
+  }
+
+  it('выплата уменьшает остаток перевода ровно на сумму', async () => {
+    const { t, anya, borya } = await loadTripWithSharedExpense()
+
+    // Квоты 5000/5000: Аня-плательщик +5000, Боря −5000 → перевод Боря→Аня 5000.
+    const before = computeBalances(t.trip.value as TripState)
+    expect(before).toEqual([
+      { participantId: anya, amount: 5000 },
+      { participantId: borya, amount: -5000 },
+    ])
+    expect(settle(before)).toEqual([{ fromId: borya, toId: anya, amount: 5000 }])
+
+    const paid = t.addPayment({ fromId: borya, toId: anya, amount: 2000 })
+    if (!paid.ok) throw new Error('выплата не добавилась')
+
+    // Выплата 2000 гасит часть долга (ADR 0010): перевод тает до 3000.
+    const after = computeBalances(t.trip.value as TripState)
+    expect(after).toEqual([
+      { participantId: anya, amount: 3000 },
+      { participantId: borya, amount: -3000 },
+    ])
+    expect(settle(after)).toEqual([{ fromId: borya, toId: anya, amount: 3000 }])
+  })
+
+  it('полная выплата гасит перевод целиком — сводить больше нечего', async () => {
+    const { t, anya, borya } = await loadTripWithSharedExpense()
+
+    const paid = t.addPayment({ fromId: borya, toId: anya, amount: 5000 })
+    if (!paid.ok) throw new Error('выплата не добавилась')
+
+    const balances = computeBalances(t.trip.value as TripState)
+    expect(balances).toEqual([
+      { participantId: anya, amount: 0 },
+      { participantId: borya, amount: 0 },
+    ])
+    expect(settle(balances)).toEqual([])
+  })
+})
+
 /** Поездка RUB с EUR (курс 3/1) и двумя участниками — сцена для валют. */
 async function loadTripWithEuro() {
   const { useTrip } = await loadUseTrip()

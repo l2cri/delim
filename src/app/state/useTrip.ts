@@ -4,6 +4,7 @@ import { createNewTrip, parseTripState, TRIP_LIMITS } from '../../core'
 import type {
   Expense,
   Participant,
+  Payment,
   Rational,
   Split,
   TripParseError,
@@ -61,6 +62,24 @@ export type SaveExpenseResult =
   | { ok: false; reason: 'not-found' } // только updateExpense
 
 export type RemoveExpenseResult = { ok: true } | { ok: false; reason: 'not-found' }
+
+/** Вход мутаций выплаты: сумма в целых минорных единицах базовой валюты; валюта
+ *  не выбирается — выплата всегда в валюте поездки (SPEC), мутация пишет baseCurrency. */
+export type PaymentInput = {
+  fromId: string
+  toId: string
+  amount: number // целые минорные единицы, > 0
+}
+
+export type SavePaymentResult =
+  | { ok: true; payment: Payment }
+  | { ok: false; reason: 'bad-amount' }
+  | { ok: false; reason: 'same-participant' }
+  | { ok: false; reason: 'unknown-participant'; id: string }
+  | { ok: false; reason: 'limit'; max: number } // только addPayment
+  | { ok: false; reason: 'not-found' } // только updatePayment
+
+export type RemovePaymentResult = { ok: true } | { ok: false; reason: 'not-found' }
 
 export type AddCurrencyResult =
   | { ok: true }
@@ -280,6 +299,77 @@ function removeExpense(id: string): RemoveExpenseResult {
   return { ok: true }
 }
 
+/**
+ * Общие проверки входа выплаты в едином порядке (детерминированном для тестов):
+ * сумма → тот же участник → участники (сначала from, потом to) → лимит.
+ * null — вход годен. Лимит спрашивает только добавление: обновление не растит список.
+ */
+function paymentInputError(
+  current: TripState,
+  input: PaymentInput,
+  withLimit: boolean,
+): SavePaymentResult | null {
+  if (!Number.isInteger(input.amount) || input.amount <= 0) {
+    return { ok: false, reason: 'bad-amount' }
+  }
+  // fromId === toId запрещён и схемой: выплата самому себе не имеет смысла.
+  if (input.fromId === input.toId) return { ok: false, reason: 'same-participant' }
+  const knownIds = new Set(current.participants.map((p) => p.id))
+  if (!knownIds.has(input.fromId)) {
+    return { ok: false, reason: 'unknown-participant', id: input.fromId }
+  }
+  if (!knownIds.has(input.toId)) {
+    return { ok: false, reason: 'unknown-participant', id: input.toId }
+  }
+  if (withLimit && current.payments.length >= TRIP_LIMITS.payments) {
+    return { ok: false, reason: 'limit', max: TRIP_LIMITS.payments }
+  }
+  return null
+}
+
+/**
+ * Мутации выплаты (ADR 0010): закрытие долга — только регистрация факта
+ * «кто→кому сколько». Стейт ничего не пересчитывает и не кэширует: сведение —
+ * производная от расходов и выплат, UI зовёт ядро (computeBalances + settle)
+ * при каждом изменении.
+ */
+function addPayment(input: PaymentInput): SavePaymentResult {
+  const current = requireTrip()
+  const error = paymentInputError(current, input, true)
+  if (error) return error
+  const payment: Payment = {
+    id: crypto.randomUUID(),
+    fromId: input.fromId,
+    toId: input.toId,
+    amount: input.amount,
+    currencyCode: current.baseCurrency,
+  }
+  current.payments.push(payment)
+  return { ok: true, payment }
+}
+
+function updatePayment(id: string, input: PaymentInput): SavePaymentResult {
+  const current = requireTrip()
+  const target = current.payments.find((p) => p.id === id)
+  if (!target) return { ok: false, reason: 'not-found' }
+  const error = paymentInputError(current, input, false)
+  if (error) return error
+  // id — идентичность записи, неприкосновенен; остальное заменяется (образец — updateExpense).
+  target.fromId = input.fromId
+  target.toId = input.toId
+  target.amount = input.amount
+  target.currencyCode = current.baseCurrency
+  return { ok: true, payment: target }
+}
+
+function removePayment(id: string): RemovePaymentResult {
+  const current = requireTrip()
+  const kept = current.payments.filter((p) => p.id !== id)
+  if (kept.length === current.payments.length) return { ok: false, reason: 'not-found' }
+  current.payments = kept
+  return { ok: true }
+}
+
 /** Курс — положительные безопасные целые пары, контракт Rational схемы; в рантайме
  * прийти может любое (UI присылает результат parseRate, но мутация защищает схему
  * сама — как expenseInputError защищает расход). */
@@ -370,6 +460,9 @@ export function useTrip(): {
   addExpense(input: ExpenseInput): SaveExpenseResult
   updateExpense(id: string, input: ExpenseInput): SaveExpenseResult
   removeExpense(id: string): RemoveExpenseResult
+  addPayment(input: PaymentInput): SavePaymentResult
+  updatePayment(id: string, input: PaymentInput): SavePaymentResult
+  removePayment(id: string): RemovePaymentResult
   addCurrency(code: string, rate: Rational): AddCurrencyResult
   updateCurrencyRate(code: string, rate: Rational): UpdateCurrencyRateResult
   removeCurrency(code: string): RemoveCurrencyResult
@@ -386,6 +479,9 @@ export function useTrip(): {
     addExpense,
     updateExpense,
     removeExpense,
+    addPayment,
+    updatePayment,
+    removePayment,
     addCurrency,
     updateCurrencyRate,
     removeCurrency,
