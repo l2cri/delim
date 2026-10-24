@@ -112,9 +112,10 @@ const nodes = computed<GraphNode[]>(() => {
   // равенстве — порядок участников (тай-брейк, как в остальном UI). Крупный
   // кредитор и крупный должник оказываются соседями через стык круга — их
   // перевод (обычно самый большой) — короткая дуга.
+  const byId = new Map(props.trip.participants.map((p) => [p.id, p]))
   const ordered = balances.value
     .map((entry, order) => ({
-      participant: props.trip.participants[order], // записи балансов идут в порядке участников
+      participant: byId.get(entry.participantId)!, // стыковка по id, как в SettlementCard
       amount: entry.amount,
       order,
     }))
