@@ -48,10 +48,10 @@ const rateArb = fc.record({
 })
 
 /** Случайный сплит equal/shares по k участникам. */
-function proportionalSplitArb(k: number): fc.Arbitrary<Split> {
+function proportionalSplitArb(k: number): fc.Arbitrary<ProportionalSplit> {
   return fc
     .constantFrom<'equal' | 'shares'>('equal', 'shares')
-    .chain((mode): fc.Arbitrary<Split> => {
+    .chain((mode): fc.Arbitrary<ProportionalSplit> => {
       if (mode === 'equal') {
         return fc.constant({ mode: 'equal', participantIds: ids(k) })
       }
@@ -64,8 +64,15 @@ function proportionalSplitArb(k: number): fc.Arbitrary<Split> {
     })
 }
 
+/** Пропорциональный сплит: квоты — доли суммы, а не введённые значения. */
+type ProportionalSplit = Extract<Split, { mode: 'equal' } | { mode: 'shares' }>
+
 /** Кванты пропорционального сплита: знаменатель D и числители N_i — квота N_i/D точно. */
-function quotas(split: Split, amount: number, rate: { num: number; den: number }): { den: bigint; nums: bigint[] } {
+function quotas(
+  split: ProportionalSplit,
+  amount: number,
+  rate: { num: number; den: number },
+): { den: bigint; nums: bigint[] } {
   if (split.mode === 'equal') {
     const k = BigInt(split.participantIds.length)
     return { den: BigInt(rate.den) * k, nums: split.participantIds.map(() => BigInt(amount) * BigInt(rate.num)) }

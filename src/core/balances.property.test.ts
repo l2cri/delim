@@ -85,6 +85,20 @@ const tripArb: fc.Arbitrary<TripState> = fc
   .chain(([participantCount, extraCount]) => {
     const ids = Array.from({ length: participantCount }, (_, i) => `p${i + 1}`)
     const currencyCodes = ['RUB', ...Array.from({ length: extraCount }, (_, i) => `C${i + 1}`)]
+    // Один участник не может отправить выплату другому — семена выплат пусты.
+    const paymentSeedsArb: fc.Arbitrary<
+      { pair: { from: string; to: string }; amount: number; currencyIndex: number }[]
+    > =
+      participantCount >= 2
+        ? fc.array(
+            fc.record({
+              pair: distinctPairArb(ids),
+              amount: fc.integer({ min: 1, max: 10 ** 9 }),
+              currencyIndex: fc.nat(currencyCodes.length - 1),
+            }),
+            { maxLength: 5 },
+          )
+        : fc.constant([])
     return fc
       .record({
         extraRates: fc.array(rateArb, { minLength: extraCount, maxLength: extraCount }),
@@ -97,17 +111,7 @@ const tripArb: fc.Arbitrary<TripState> = fc
           }),
           { maxLength: 15 },
         ),
-        payments:
-          participantCount >= 2
-            ? fc.array(
-                fc.record({
-                  pair: distinctPairArb(ids),
-                  amount: fc.integer({ min: 1, max: 10 ** 9 }),
-                  currencyIndex: fc.nat(currencyCodes.length - 1),
-                }),
-                { maxLength: 5 },
-              )
-            : fc.constant([]),
+        payments: paymentSeedsArb,
       })
       .map(({ extraRates, expenses, payments }) => ({
         version: SCHEMA_VERSION,
