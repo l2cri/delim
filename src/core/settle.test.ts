@@ -415,5 +415,37 @@ describe('операция «сведение» (гибрид жадного и 
       expect(checked).toBeGreaterThan(5000) // пространство живо, а не выродилось
       expect(failures.slice(0, 5), `проверено профилей: ${checked}`).toEqual([])
     })
+
+    it('жадный оракул гасит в ноль и не короче эталона (санити-связка оракулов)', () => {
+      // Хвост ревью тикета 07 (SPEC п.3 — «против обоих алгоритмов»): на том же
+      // полном переборе прогоняется и жадный слой. Эталон — теоретический
+      // минимум, поэтому жадный не может быть короче него; а как валидное
+      // сведение — обязан гасить все балансы и укладываться в ненулевых − 1.
+      // Связка оракулов замыкает треугольник: settle == эталон (тест выше)
+      // и жадный ≥ эталон ⟹ сведение не хуже жадного на всём пространстве.
+      const failures: string[] = []
+      let checked = 0
+      for (let n = 2; n <= 6; n++) {
+        for (const amounts of zeroSumProfiles(n)) {
+          checked += 1
+          const balances = amounts.map((amount, i) => bal(`p${i}`, amount))
+          const greedy = greedyReference(balances)
+          const reference = referenceMinTransfers(amounts)
+          const nonzero = amounts.filter((amount) => amount !== 0).length
+          const ok =
+            settlesExactly(balances, greedy) &&
+            greedy.length >= reference &&
+            greedy.length <= Math.max(0, nonzero - 1)
+          if (!ok) {
+            failures.push(
+              `профиль [${amounts.join(', ')}]: жадный ${greedy.length} — ${JSON.stringify(greedy)}, ` +
+                `эталон ${reference}, ненулевых ${nonzero}`,
+            )
+          }
+        }
+      }
+      expect(checked).toBeGreaterThan(5000)
+      expect(failures.slice(0, 5), `проверено профилей: ${checked}`).toEqual([])
+    })
   })
 })
