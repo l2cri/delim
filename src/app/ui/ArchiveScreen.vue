@@ -85,7 +85,7 @@ const errorDetail = computed(() =>
             <button
               type="button"
               class="shrink-0 rounded-lg p-1.5 text-zinc-500 transition-colors hover:bg-zinc-200/70 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-              aria-label="Назад к активной поездке"
+              aria-label="Назад, на главный экран"
               @click="navigate({ name: 'home' })"
             >
               <svg
