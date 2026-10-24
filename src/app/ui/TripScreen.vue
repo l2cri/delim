@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { Expense, Participant, Payment, Rational } from '../../core'
-import { TRIP_LIMITS } from '../../core'
+import { TRIP_LIMITS, encodeTripState, SHARE_PAYLOAD_WARN } from '../../core'
 import { plural } from './format'
+import { writeToClipboard } from './clipboard'
 import ConfirmDialog from './ConfirmDialog.vue'
 import CurrenciesCard from './CurrenciesCard.vue'
 import DebtGraphCard from './DebtGraphCard.vue'
@@ -24,6 +25,7 @@ import {
   type SavePaymentResult,
   type UpdateCurrencyRateResult,
 } from '../state/useTrip'
+import { VIEWER_PREFIX } from '../state/useHashRoute'
 import { isBlank } from '../state/validation'
 
 // Экран поездки без бизнес-логики: все правила (лимит, занятость, палитры) —
@@ -62,7 +64,7 @@ const nameDraft = ref('')
 const renamingId = ref<string | null>(null)
 const renameDraft = ref('')
 
-type Notice = { tone: 'error' | 'info'; text: string }
+type Notice = { tone: 'error' | 'warn' | 'info'; text: string }
 const notice = ref<Notice | null>(null)
 
 // Кнопка активна при непустом имени (правило — из стейта, то же, что в addParticipant):
@@ -72,6 +74,28 @@ const canAdd = computed(() => !isBlank(nameDraft.value))
 
 function showNotice(tone: Notice['tone'], text: string): void {
   notice.value = { tone, text }
+}
+
+// Шеринг ссылкой (тикет 15): весь стейт — в хэш `#/t=…` (ADR 0007), собирает
+// и сжимает его кодек ядра; экран только копирует готовый URL и предупреждает
+// о длине. Предупреждение не блокирует (ADR 0007): копирование уже состоялось.
+async function shareTrip(): Promise<void> {
+  if (!trip.value) return
+  const payload = encodeTripState(trip.value)
+  const link = `${window.location.origin}${window.location.pathname}${VIEWER_PREFIX}${payload}`
+  const ok = await writeToClipboard(link)
+  if (!ok) {
+    showNotice('error', 'Не удалось скопировать ссылку')
+    return
+  }
+  if (link.length > SHARE_PAYLOAD_WARN) {
+    showNotice(
+      'warn',
+      `Ссылка скопирована, но она длинная — ${link.length} символов. Мессенджеры могут не пропустить её целиком; надёжнее отправить квитанцию`,
+    )
+    return
+  }
+  showNotice('info', 'Ссылка скопирована — отправьте её участникам')
 }
 
 function describeAddRefusal(result: Extract<AddParticipantResult, { ok: false }>): string {
@@ -423,23 +447,34 @@ function confirmDelete(): void {
       class="sticky top-0 z-10 border-b border-zinc-200 bg-zinc-50/90 px-5 py-4 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/90"
     >
       <div class="mx-auto flex w-full max-w-md items-center justify-between gap-3">
-        <div class="flex items-center gap-3">
-          <svg viewBox="0 0 24 24" class="size-7 text-emerald-600" aria-hidden="true">
+        <div class="flex min-w-0 items-center gap-3">
+          <svg viewBox="0 0 24 24" class="size-7 shrink-0 text-emerald-600" aria-hidden="true">
             <circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="2.5" />
             <path d="M12 5.5 A 6 6 0 0 0 12 18.5 Z" fill="currentColor" />
           </svg>
-          <div>
-            <h1 class="text-lg leading-tight font-semibold">{{ trip.name }}</h1>
+          <div class="min-w-0">
+            <h1 class="truncate text-lg leading-tight font-semibold">{{ trip.name }}</h1>
             <p class="text-xs text-zinc-500 dark:text-zinc-400">
               Базовая валюта: {{ trip.baseCurrency }}
             </p>
           </div>
         </div>
-        <span
-          class="rounded-full bg-emerald-600/10 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-400"
-        >
-          Активна
-        </span>
+        <!-- Правая группа не сжимается: длинное название поездки вместо неё
+             обрезается — мобильная вёрстка не ломается ни на каком экране. -->
+        <div class="flex shrink-0 items-center gap-2">
+          <span
+            class="rounded-full bg-emerald-600/10 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-400"
+          >
+            Активна
+          </span>
+          <button
+            type="button"
+            class="rounded-full border border-zinc-200 px-3 py-1 text-xs font-medium text-zinc-600 transition-colors hover:border-emerald-500 hover:text-emerald-600 dark:border-zinc-800 dark:text-zinc-400 dark:hover:border-emerald-500 dark:hover:text-emerald-400"
+            @click="shareTrip"
+          >
+            🔗 Поделиться
+          </button>
+        </div>
       </div>
     </header>
 
@@ -634,7 +669,9 @@ function confirmDelete(): void {
         :class="
           notice.tone === 'error'
             ? 'text-red-600 dark:text-red-400'
-            : 'text-zinc-500 dark:text-zinc-400'
+            : notice.tone === 'warn'
+              ? 'text-amber-700 dark:text-amber-400'
+              : 'text-zinc-500 dark:text-zinc-400'
         "
       >
         {{ notice.text }}

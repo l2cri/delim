@@ -9,8 +9,8 @@ import ExpenseForm from './ExpenseForm.vue'
 // Секция «Расходы» в стиле «Участников»: список с анимацией и формой вместо
 // кнопки добавления. Состояние «что открыто» владельцем живёт в TripScreen —
 // сюда приходят только данные и уходят только намерения пользователя.
-// readonly — для экрана архива: список без форм и кнопок, тексты констатируют
-// прошедшее («не было»), а не ведут к действию.
+// readonly — для экранов архива и зрителя: список без форм и кнопок, тексты
+// констатируют («нет»), а не ведут к действию.
 
 /** Что открыто в секции: добавление, редактирование конкретного расхода или ничего. */
 export type ExpenseEditor = { kind: 'add' } | { kind: 'edit'; expense: Expense }
@@ -73,7 +73,7 @@ function baseEquivalent(expense: Expense): string | null {
     </div>
 
     <p v-if="readonly && expenses.length === 0" class="text-sm text-zinc-500 dark:text-zinc-400">
-      Расходов в этой поездке не было
+      Расходов нет
     </p>
     <p v-else-if="!readonly && participants.length === 0" class="text-sm text-zinc-500 dark:text-zinc-400">
       Добавьте участников, чтобы вносить расходы
