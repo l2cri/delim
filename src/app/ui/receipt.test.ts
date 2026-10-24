@@ -54,7 +54,7 @@ describe('квитанция целиком', () => {
         '',
         '```',
         'Балансы · RUB',
-        'Аня — должны ей 666,66',
+        'Аня — должны ему 666,66',
         'Боря — должен 333,33',
         'Вика — должен 333,33',
         'Гоша — в нуле',
@@ -133,7 +133,7 @@ describe('строки балансов и переводов', () => {
 
     const receipt = buildReceipt(state)
     const balanceLine = receipt.split('\n').find((line) => line.startsWith(longName))
-    expect(balanceLine).toBe(`${longName} — должны ей 1\u00A0250,00`)
+    expect(balanceLine).toBe(`${longName} — должны ему 1\u00A0250,00`)
     expect(balanceLine?.endsWith('1\u00A0250,00')).toBe(true)
   })
 
@@ -149,7 +149,7 @@ describe('строки балансов и переводов', () => {
 
     const receipt = buildReceipt(state)
     expect(receipt).toContain('Балансы · RUB')
-    expect(receipt).toContain('Аня — должны ей 150,00')
+    expect(receipt).toContain('Аня — должны ему 150,00')
     expect(receipt).toContain('Боря — должен 150,00')
     expect(receipt).toContain('Боря → Аня 150,00')
   })
@@ -163,7 +163,7 @@ describe('строки балансов и переводов', () => {
 
     const receipt = buildReceipt(state)
     expect(receipt).toContain('Расходов: 1 · Выплат: 1')
-    expect(receipt).toContain('Аня — должны ей 333,33')
+    expect(receipt).toContain('Аня — должны ему 333,33')
     expect(receipt).toContain('Боря — в нуле')
     expect(receipt).toContain('Вика — должен 333,33')
     expect(receipt).toContain('Вика → Аня 333,33')

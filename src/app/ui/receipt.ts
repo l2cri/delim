@@ -11,24 +11,14 @@ import { computeBalances, settle } from '../../core'
 import { formatMinor } from './format'
 
 /**
- * Местоимение кредитора по написанию имени: русские женские имена кончаются
- * на -а/-я (Аня, Вика, Мария) — «должны ей», остальные — «должны ему» (как в
- * сечении «Сведение»). Пол участника в домене не хранится — это выбор слова
- * по написанию имени, а не знание о человеке; мужские уменьшительные на -а/-я
- * (Гоша, Никита) попадают под женскую форму — цена отказа от хранения пола
- * в стейте поездки.
+ * Подпись баланса — дословно те же формулировки, что в SettlementCard (квитанция
+ * лежит на том же экране — расхождение слов для одного человека заметнее
+ * нейтрального «ему»), без суффикса валюты: валюта названа один раз в заголовке
+ * блока («Балансы · RUB»).
  */
-function feminineEnding(name: string): boolean {
-  return /[ая]$/i.test(name.trim())
-}
-
-/**
- * Подпись баланса — те же формулировки, что в SettlementCard, без суффикса
- * валюты: валюта названа один раз в заголовке блока («Балансы · RUB»).
- */
-function describeBalance(name: string, amount: number): string {
+function describeBalance(amount: number): string {
   if (amount > 0) {
-    return `должны ${feminineEnding(name) ? 'ей' : 'ему'} ${formatMinor(amount)}`
+    return `должны ему ${formatMinor(amount)}`
   }
   if (amount < 0) {
     return `должен ${formatMinor(-amount)}`
@@ -91,7 +81,7 @@ export function buildReceipt(trip: TripState): string {
     `Балансы · ${trip.baseCurrency}`,
     ...balances.map((entry) => {
       const name = byId.get(entry.participantId)?.name ?? '—'
-      return `${name} — ${describeBalance(name, entry.amount)}`
+      return `${name} — ${describeBalance(entry.amount)}`
     }),
     '',
     `Переводы · ${trip.baseCurrency}`,
