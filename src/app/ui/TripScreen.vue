@@ -13,6 +13,7 @@ import PaymentsCard from './PaymentsCard.vue'
 import type { PaymentEditor } from './PaymentsCard.vue'
 import ReceiptCard from './ReceiptCard.vue'
 import SettlementCard from './SettlementCard.vue'
+import Toast from './Toast.vue'
 import {
   useTrip,
   type AddCurrencyResult,
@@ -661,21 +662,6 @@ function confirmDelete(): void {
           </button>
         </div>
       </section>
-
-      <p
-        v-if="notice"
-        role="alert"
-        class="text-sm"
-        :class="
-          notice.tone === 'error'
-            ? 'text-red-600 dark:text-red-400'
-            : notice.tone === 'warn'
-              ? 'text-amber-700 dark:text-amber-400'
-              : 'text-zinc-500 dark:text-zinc-400'
-        "
-      >
-        {{ notice.text }}
-      </p>
     </main>
 
     <footer class="px-5 pb-6 text-center text-xs text-zinc-400 dark:text-zinc-600">
@@ -709,6 +695,10 @@ function confirmDelete(): void {
       @confirm="confirmDelete"
       @cancel="cancelConfirm"
     />
+
+    <!-- Тост последним: при z-50 у обоих поздний в DOM рисуется сверху —
+         info-тост «архивировать нечего» виден поверх фона открытого диалога. -->
+    <Toast :notice="notice" @dismiss="notice = null" />
   </div>
 </template>
 
