@@ -1,21 +1,25 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import type { Expense, Participant, Rational } from '../../core'
+import type { Expense, Participant, Payment, Rational } from '../../core'
 import { TRIP_LIMITS } from '../../core'
 import { plural } from './format'
 import CurrenciesCard from './CurrenciesCard.vue'
 import DebtGraphCard from './DebtGraphCard.vue'
 import ExpensesCard from './ExpensesCard.vue'
 import type { ExpenseEditor } from './ExpensesCard.vue'
+import PaymentsCard from './PaymentsCard.vue'
+import type { PaymentEditor } from './PaymentsCard.vue'
 import SettlementCard from './SettlementCard.vue'
 import {
   useTrip,
   type AddCurrencyResult,
   type AddParticipantResult,
   type ExpenseInput,
+  type PaymentInput,
   type RemoveCurrencyResult,
   type RemoveParticipantResult,
   type SaveExpenseResult,
+  type SavePaymentResult,
   type UpdateCurrencyRateResult,
 } from '../state/useTrip'
 import { isBlank } from '../state/validation'
@@ -32,6 +36,9 @@ const {
   addExpense,
   updateExpense,
   removeExpense,
+  addPayment,
+  updatePayment,
+  removePayment,
   addCurrency,
   updateCurrencyRate,
   removeCurrency,
@@ -42,6 +49,9 @@ const limit = TRIP_LIMITS.participants
 
 // Что открыто в секции расходов: добавление, редактирование или ничего.
 const expenseEditor = ref<ExpenseEditor | null>(null)
+
+// Что открыто в секции выплат: добавление, редактирование или ничего.
+const paymentEditor = ref<PaymentEditor | null>(null)
 
 const nameDraft = ref('')
 // Режим переименования: id участника + черновик имени; null — никто не редактируется.
@@ -189,6 +199,66 @@ function removeExpenseFromList(expense: Expense): void {
     notice.value = null
   } else {
     showNotice('error', 'Расход уже удалён')
+  }
+}
+
+function describePaymentRefusal(result: Extract<SavePaymentResult, { ok: false }>): string {
+  switch (result.reason) {
+    case 'not-found':
+      return 'Выплата уже удалена'
+    case 'unknown-participant':
+      return 'Участник больше не в поездке'
+    case 'limit':
+      return `Лимит поездки — ${result.max} выплат`
+    case 'same-participant':
+      return 'Отправитель и получатель — один человек'
+    case 'bad-amount':
+      return 'Введите сумму'
+  }
+}
+
+function openAddPayment(): void {
+  paymentEditor.value = { kind: 'add' }
+  notice.value = null
+}
+
+function editPayment(payment: Payment): void {
+  paymentEditor.value = { kind: 'edit', payment }
+  notice.value = null
+}
+
+function cancelPayment(): void {
+  paymentEditor.value = null
+  notice.value = null
+}
+
+function savePayment(input: PaymentInput): void {
+  const editor = paymentEditor.value
+  if (!editor) return
+  const result =
+    editor.kind === 'edit' ? updatePayment(editor.payment.id, input) : addPayment(input)
+  if (result.ok) {
+    paymentEditor.value = null
+    notice.value = null
+  } else {
+    showNotice('error', describePaymentRefusal(result))
+  }
+}
+
+// Выплаты удаляются свободно, без подтверждения (ADR 0010) — как расходы.
+function removePaymentFromList(payment: Payment): void {
+  const result = removePayment(payment.id)
+  if (result.ok) {
+    // Форма редактирования этой же выплаты стала неактуальна — закрываем.
+    if (
+      paymentEditor.value?.kind === 'edit' &&
+      paymentEditor.value.payment.id === payment.id
+    ) {
+      paymentEditor.value = null
+    }
+    notice.value = null
+  } else {
+    showNotice('error', 'Выплата уже удалена')
   }
 }
 
@@ -436,6 +506,18 @@ function removeCurrencyIntent(code: string): void {
         @cancel="currencyAdding = false; notice = null"
       />
 
+      <PaymentsCard
+        :participants="participants"
+        :payments="trip.payments"
+        :base-currency="trip.baseCurrency"
+        :editing="paymentEditor"
+        @open="openAddPayment"
+        @edit="editPayment"
+        @remove="removePaymentFromList"
+        @save="savePayment"
+        @cancel="cancelPayment"
+      />
+
       <SettlementCard :trip="trip" />
 
       <DebtGraphCard :trip="trip" />
@@ -457,7 +539,7 @@ function removeCurrencyIntent(code: string): void {
         class="rounded-2xl border border-dashed border-zinc-300 p-5 text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400"
         aria-label="Что дальше"
       >
-        Дальше — выплаты и квитанция. Эти разделы появятся в следующих
+        Дальше — квитанция. Этот раздел появится в следующих
         обновлениях.
       </section>
     </main>

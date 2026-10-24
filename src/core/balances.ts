@@ -15,7 +15,10 @@
 // но схема допускает), N считается по покрытой части — инвариант нуля держится безусловно
 // на любом валидном по схеме стейте.
 //
-// Выплата: c = roundHalfUp(amount × num / den); отправителю −c, получателю +c.
+// Выплата: c = roundHalfUp(amount × num / den); плательщику +c, получателю −c.
+// Деньги ушли от отправителя к получателю — долг отправителя тает ровно на c
+// (ADR 0010: выплата закрывает долг), та же конвенция знака, что у плательщика
+// расхода.
 //
 // Вся рациональная арифметика — на bigint (как в calculator.ts), накопление проводок —
 // тоже bigint, перевод в number на выходе. Квоты, доли и конвертация — общие с
@@ -58,8 +61,8 @@ export function computeBalances(state: TripState): BalanceEntry[] {
   for (const payment of state.payments) {
     const rate = rates.get(payment.currencyCode)!
     const converted = convertAmount(payment.amount, rate)
-    apply(payment.fromId, -converted)
-    apply(payment.toId, converted)
+    apply(payment.fromId, converted)
+    apply(payment.toId, -converted)
   }
 
   return state.participants.map((participant) => ({
