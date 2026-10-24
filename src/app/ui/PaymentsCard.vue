@@ -14,12 +14,17 @@ import PaymentForm from './PaymentForm.vue'
 /** Что открыто в секции: добавление, редактирование конкретной выплаты или ничего. */
 export type PaymentEditor = { kind: 'add' } | { kind: 'edit'; payment: Payment }
 
-const props = defineProps<{
-  participants: Participant[]
-  payments: Payment[]
-  baseCurrency: string
-  editing: PaymentEditor | null
-}>()
+const props = withDefaults(
+  defineProps<{
+    participants: Participant[]
+    payments: Payment[]
+    baseCurrency: string
+    editing: PaymentEditor | null
+    /** Режим зрителя (тикет 15): только список, без кнопок и форм — экран не меняется. */
+    readonly?: boolean
+  }>(),
+  { readonly: false },
+)
 
 const emit = defineEmits<{
   /** Клик «+ Добавить выплату». */
@@ -57,31 +62,35 @@ function sidesLabel(payment: Payment): string {
       </span>
     </div>
 
-    <p v-if="participants.length === 0" class="text-sm text-zinc-500 dark:text-zinc-400">
+    <!-- Зрителю без участников подсказка не нужна: он никого не добавит. -->
+    <p v-if="participants.length === 0 && !readonly" class="text-sm text-zinc-500 dark:text-zinc-400">
       Добавьте участников, чтобы фиксировать выплаты
     </p>
 
     <template v-else>
-      <PaymentForm
-        v-if="editing"
-        :key="editing.kind === 'edit' ? editing.payment.id : 'add'"
-        :participants="participants"
-        :base-currency="baseCurrency"
-        :editing="editing.kind === 'edit' ? editing.payment : null"
-        @save="(input) => emit('save', input)"
-        @cancel="emit('cancel')"
-      />
-      <button
-        v-else
-        type="button"
-        class="w-full rounded-xl border border-dashed border-zinc-300 px-4 py-3 text-sm font-medium text-zinc-600 transition-colors hover:border-emerald-500 hover:text-emerald-600 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-emerald-500 dark:hover:text-emerald-400"
-        @click="emit('open')"
-      >
-        + Добавить выплату
-      </button>
+      <template v-if="!readonly">
+        <PaymentForm
+          v-if="editing"
+          :key="editing.kind === 'edit' ? editing.payment.id : 'add'"
+          :participants="participants"
+          :base-currency="baseCurrency"
+          :editing="editing.kind === 'edit' ? editing.payment : null"
+          @save="(input) => emit('save', input)"
+          @cancel="emit('cancel')"
+        />
+        <button
+          v-else
+          type="button"
+          class="w-full rounded-xl border border-dashed border-zinc-300 px-4 py-3 text-sm font-medium text-zinc-600 transition-colors hover:border-emerald-500 hover:text-emerald-600 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-emerald-500 dark:hover:text-emerald-400"
+          @click="emit('open')"
+        >
+          + Добавить выплату
+        </button>
+      </template>
 
       <p v-if="payments.length === 0" class="text-sm text-zinc-500 dark:text-zinc-400">
-        Пока выплат нет. Когда кто-то рассчитается, зафиксируйте выплату здесь.
+        <template v-if="readonly">Выплат пока нет</template>
+        <template v-else>Пока выплат нет. Когда кто-то рассчитается, зафиксируйте выплату здесь.</template>
       </p>
 
       <TransitionGroup
@@ -125,24 +134,26 @@ function sidesLabel(payment: Payment): string {
             {{ formatMinor(payment.amount) }} {{ baseCurrency }}
           </span>
 
-          <button
-            type="button"
-            class="rounded-lg p-2 text-zinc-500 transition-colors hover:bg-zinc-200/70 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-            :aria-label="`Изменить выплату ${sidesLabel(payment)}`"
-            title="Изменить"
-            @click="emit('edit', payment)"
-          >
-            ✏️
-          </button>
-          <button
-            type="button"
-            class="rounded-lg p-2 text-zinc-500 transition-colors hover:bg-red-100 hover:text-red-600 dark:text-zinc-400 dark:hover:bg-red-950/50 dark:hover:text-red-400"
-            :aria-label="`Удалить выплату ${sidesLabel(payment)}`"
-            title="Удалить"
-            @click="emit('remove', payment)"
-          >
-            🗑️
-          </button>
+          <template v-if="!readonly">
+            <button
+              type="button"
+              class="rounded-lg p-2 text-zinc-500 transition-colors hover:bg-zinc-200/70 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+              :aria-label="`Изменить выплату ${sidesLabel(payment)}`"
+              title="Изменить"
+              @click="emit('edit', payment)"
+            >
+              ✏️
+            </button>
+            <button
+              type="button"
+              class="rounded-lg p-2 text-zinc-500 transition-colors hover:bg-red-100 hover:text-red-600 dark:text-zinc-400 dark:hover:bg-red-950/50 dark:hover:text-red-400"
+              :aria-label="`Удалить выплату ${sidesLabel(payment)}`"
+              title="Удалить"
+              @click="emit('remove', payment)"
+            >
+              🗑️
+            </button>
+          </template>
         </li>
       </TransitionGroup>
     </template>

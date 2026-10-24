@@ -12,13 +12,18 @@ import ExpenseForm from './ExpenseForm.vue'
 /** Что открыто в секции: добавление, редактирование конкретного расхода или ничего. */
 export type ExpenseEditor = { kind: 'add' } | { kind: 'edit'; expense: Expense }
 
-const props = defineProps<{
-  participants: Participant[]
-  expenses: Expense[]
-  currencies: Currency[]
-  baseCurrency: string
-  editing: ExpenseEditor | null
-}>()
+const props = withDefaults(
+  defineProps<{
+    participants: Participant[]
+    expenses: Expense[]
+    currencies: Currency[]
+    baseCurrency: string
+    editing: ExpenseEditor | null
+    /** Режим зрителя (тикет 15): только список, без кнопок и форм — экран не меняется. */
+    readonly?: boolean
+  }>(),
+  { readonly: false },
+)
 
 const emit = defineEmits<{
   /** Клик «+ Добавить расход». */
@@ -58,32 +63,36 @@ function baseEquivalent(expense: Expense): string | null {
       </span>
     </div>
 
-    <p v-if="participants.length === 0" class="text-sm text-zinc-500 dark:text-zinc-400">
+    <!-- Зрителю без участников подсказка не нужна: он никого не добавит. -->
+    <p v-if="participants.length === 0 && !readonly" class="text-sm text-zinc-500 dark:text-zinc-400">
       Добавьте участников, чтобы вносить расходы
     </p>
 
     <template v-else>
-      <ExpenseForm
-        v-if="editing"
-        :key="editing.kind === 'edit' ? editing.expense.id : 'add'"
-        :participants="participants"
-        :currencies="currencies"
-        :base-currency="baseCurrency"
-        :editing="editing.kind === 'edit' ? editing.expense : null"
-        @save="(input) => emit('save', input)"
-        @cancel="emit('cancel')"
-      />
-      <button
-        v-else
-        type="button"
-        class="w-full rounded-xl border border-dashed border-zinc-300 px-4 py-3 text-sm font-medium text-zinc-600 transition-colors hover:border-emerald-500 hover:text-emerald-600 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-emerald-500 dark:hover:text-emerald-400"
-        @click="emit('open')"
-      >
-        + Добавить расход
-      </button>
+      <template v-if="!readonly">
+        <ExpenseForm
+          v-if="editing"
+          :key="editing.kind === 'edit' ? editing.expense.id : 'add'"
+          :participants="participants"
+          :currencies="currencies"
+          :base-currency="baseCurrency"
+          :editing="editing.kind === 'edit' ? editing.expense : null"
+          @save="(input) => emit('save', input)"
+          @cancel="emit('cancel')"
+        />
+        <button
+          v-else
+          type="button"
+          class="w-full rounded-xl border border-dashed border-zinc-300 px-4 py-3 text-sm font-medium text-zinc-600 transition-colors hover:border-emerald-500 hover:text-emerald-600 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-emerald-500 dark:hover:text-emerald-400"
+          @click="emit('open')"
+        >
+          + Добавить расход
+        </button>
+      </template>
 
       <p v-if="expenses.length === 0" class="text-sm text-zinc-500 dark:text-zinc-400">
-        Пока расходов нет. Добавьте первый — например, такси или ужин.
+        <template v-if="readonly">Расходов пока нет</template>
+        <template v-else>Пока расходов нет. Добавьте первый — например, такси или ужин.</template>
       </p>
 
       <TransitionGroup
@@ -123,24 +132,26 @@ function baseEquivalent(expense: Expense): string | null {
             </p>
           </div>
 
-          <button
-            type="button"
-            class="rounded-lg p-2 text-zinc-500 transition-colors hover:bg-zinc-200/70 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-            :aria-label="`Изменить расход ${expense.title}`"
-            title="Изменить"
-            @click="emit('edit', expense)"
-          >
-            ✏️
-          </button>
-          <button
-            type="button"
-            class="rounded-lg p-2 text-zinc-500 transition-colors hover:bg-red-100 hover:text-red-600 dark:text-zinc-400 dark:hover:bg-red-950/50 dark:hover:text-red-400"
-            :aria-label="`Удалить расход ${expense.title}`"
-            title="Удалить"
-            @click="emit('remove', expense)"
-          >
-            🗑️
-          </button>
+          <template v-if="!readonly">
+            <button
+              type="button"
+              class="rounded-lg p-2 text-zinc-500 transition-colors hover:bg-zinc-200/70 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+              :aria-label="`Изменить расход ${expense.title}`"
+              title="Изменить"
+              @click="emit('edit', expense)"
+            >
+              ✏️
+            </button>
+            <button
+              type="button"
+              class="rounded-lg p-2 text-zinc-500 transition-colors hover:bg-red-100 hover:text-red-600 dark:text-zinc-400 dark:hover:bg-red-950/50 dark:hover:text-red-400"
+              :aria-label="`Удалить расход ${expense.title}`"
+              title="Удалить"
+              @click="emit('remove', expense)"
+            >
+              🗑️
+            </button>
+          </template>
         </li>
       </TransitionGroup>
     </template>

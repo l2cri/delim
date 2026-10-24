@@ -11,12 +11,17 @@ import { formatRate } from './format'
 // и человекочитаемое отображение курса. Деньги не считаются: разбор дроби —
 // parseRate ядра, показ — formatRate.
 
-const props = defineProps<{
-  currencies: Currency[]
-  baseCurrency: string
-  /** Открыта ли форма добавления — состоянием владеет экран, как редактором расходов. */
-  adding: boolean
-}>()
+const props = withDefaults(
+  defineProps<{
+    currencies: Currency[]
+    baseCurrency: string
+    /** Открыта ли форма добавления — состоянием владеет экран, как редактором расходов. */
+    adding: boolean
+    /** Режим зрителя (тикет 15): только список с курсами, без форм и кнопок. */
+    readonly?: boolean
+  }>(),
+  { readonly: false },
+)
 
 const emit = defineEmits<{
   /** Клик «+ Добавить валюту». */
@@ -147,7 +152,8 @@ function submitRateEdit(): void {
           </p>
         </div>
 
-        <template v-if="rateEditCode === currency.code">
+        <!-- Зритель не правит курсы: обе ветки управления только организатору. -->
+        <template v-if="!readonly && rateEditCode === currency.code">
           <input
             v-model="rateDraft"
             type="text"
@@ -179,7 +185,7 @@ function submitRateEdit(): void {
         </template>
 
         <!-- Курс базовой валюты не задаётся и сама она не удаляется (схема: 1/1). -->
-        <template v-else-if="!isBase(currency.code)">
+        <template v-else-if="!readonly && !isBase(currency.code)">
           <button
             type="button"
             class="rounded-lg p-2 text-zinc-500 transition-colors hover:bg-zinc-200/70 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
@@ -202,7 +208,9 @@ function submitRateEdit(): void {
       </li>
     </TransitionGroup>
 
-    <form v-if="adding" class="space-y-3" @submit.prevent="submitAdd">
+    <!-- Форма добавления и её кнопка-вход — только организатору; зритель видит
+         лишь список валют выше. Пресеты (chips) — часть формы и прячутся с ней. -->
+    <form v-if="!readonly && adding" class="space-y-3" @submit.prevent="submitAdd">
       <div v-if="availablePresets.length > 0" class="flex flex-wrap gap-2" role="group" aria-label="Популярные валюты">
         <button
           v-for="code in availablePresets"
@@ -278,7 +286,7 @@ function submitRateEdit(): void {
     </form>
 
     <button
-      v-else
+      v-else-if="!readonly"
       type="button"
       class="w-full rounded-xl border border-dashed border-zinc-300 px-4 py-3 text-sm font-medium text-zinc-600 transition-colors hover:border-emerald-500 hover:text-emerald-600 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-emerald-500 dark:hover:text-emerald-400"
       @click="emit('open')"
