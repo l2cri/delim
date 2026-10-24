@@ -48,6 +48,9 @@ export default defineConfig({
     }),
   ],
   test: {
+    // vmThreads создаёт happy-dom один раз на воркер, а не на каждый файл —
+    // изоляция файлов при этом сохраняется (guide/improving-performance).
+    pool: 'vmThreads',
     environment: 'happy-dom',
   },
 })
