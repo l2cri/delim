@@ -77,13 +77,20 @@ function showNotice(tone: Notice['tone'], text: string): void {
   notice.value = { tone, text }
 }
 
-// Шеринг ссылкой (тикет 15): весь стейт — в хэш `#/t=…` (ADR 0007), собирает
-// и сжимает его кодек ядра; экран только копирует готовый URL и предупреждает
-// о длине. Предупреждение не блокирует (ADR 0007): копирование уже состоялось.
+// Ссылка поездки (тикет 15): весь стейт — в хэш `#/t=…` (ADR 0007), собирает
+// и сжимает его кодек ядра. Единое место сборки: и копирование, и подсказка
+// длины под шапкой читают одну и ту же строку. encodeTripState в computed
+// кэшируется до смены trip — пересборка только по настоящему изменению данных.
+const encodedLink = computed(() => {
+  if (!trip.value) return ''
+  const payload = encodeTripState(trip.value)
+  return `${window.location.origin}${window.location.pathname}${VIEWER_PREFIX}${payload}`
+})
+
+// Предупреждение не блокирует (ADR 0007): копирование уже состоялось.
 async function shareTrip(): Promise<void> {
   if (!trip.value) return
-  const payload = encodeTripState(trip.value)
-  const link = `${window.location.origin}${window.location.pathname}${VIEWER_PREFIX}${payload}`
+  const link = encodedLink.value
   const ok = await writeToClipboard(link)
   if (!ok) {
     showNotice('error', 'Не удалось скопировать ссылку')
@@ -478,6 +485,18 @@ function confirmDelete(): void {
         </div>
       </div>
     </header>
+
+    <!-- Лимит длины ссылки виден заранее (тикет 17), а не только в тосте после
+         копирования: полоса предупреждает и ничего не блокирует (ADR 0007). -->
+    <p
+      v-if="encodedLink.length > SHARE_PAYLOAD_WARN"
+      class="border-b border-amber-300 bg-amber-50 px-5 py-2 text-xs text-amber-800 dark:border-amber-500/40 dark:bg-amber-950/80 dark:text-amber-200"
+    >
+      <span class="mx-auto block max-w-md">
+        Ссылка на эту поездку длинная — {{ encodedLink.length }} символов, мессенджер может не
+        пропустить её целиком. Надёжнее отправить квитанцию
+      </span>
+    </p>
 
     <main class="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-5 py-6">
       <section
