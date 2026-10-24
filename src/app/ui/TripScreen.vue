@@ -4,6 +4,7 @@ import type { Expense, Participant, Rational } from '../../core'
 import { TRIP_LIMITS } from '../../core'
 import { plural } from './format'
 import CurrenciesCard from './CurrenciesCard.vue'
+import DebtGraphCard from './DebtGraphCard.vue'
 import ExpensesCard from './ExpensesCard.vue'
 import type { ExpenseEditor } from './ExpensesCard.vue'
 import SettlementCard from './SettlementCard.vue'
@@ -437,6 +438,8 @@ function removeCurrencyIntent(code: string): void {
 
       <SettlementCard :trip="trip" />
 
+      <DebtGraphCard :trip="trip" />
+
       <p
         v-if="notice"
         role="alert"
@@ -454,8 +457,8 @@ function removeCurrencyIntent(code: string): void {
         class="rounded-2xl border border-dashed border-zinc-300 p-5 text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400"
         aria-label="Что дальше"
       >
-        Дальше — выплаты, граф долгов и квитанция. Эти разделы появятся в
-        следующих обновлениях.
+        Дальше — выплаты и квитанция. Эти разделы появятся в следующих
+        обновлениях.
       </section>
     </main>
 
