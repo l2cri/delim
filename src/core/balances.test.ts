@@ -259,7 +259,33 @@ describe('операция «балансы» (гроссбух)', () => {
       expectZeroSum(computeBalances(state))
     })
 
-    it('выплата уменьшает баланс отправителя и увеличивает получателя', () => {
+    it('выплата должника кредитору уменьшает долг ровно на сумму (ADR 0010)', () => {
+      // Расход 100,00 платит p1 поровну на двоих с p2: p1 +5000, p2 −5000.
+      // Возврат p2 → p1 на 50,00 (5000 минорных) закрывает долг в ноль.
+      const state = buildState()
+      state.expenses.push(
+        makeExpense({
+          payerId: 'p1',
+          amount: 10000,
+          split: { mode: 'equal', participantIds: ['p1', 'p2'] },
+        }),
+      )
+      state.payments.push({
+        id: 'v1',
+        fromId: 'p2',
+        toId: 'p1',
+        amount: 5000,
+        currencyCode: 'RUB',
+      })
+      const balances = byId(computeBalances(state))
+      expect(balances.get('p1')).toBe(0)
+      expect(balances.get('p2')).toBe(0)
+      expect(balances.get('p3')).toBe(0)
+      expect(balances.get('p4')).toBe(0)
+      expectZeroSum(computeBalances(state))
+    })
+
+    it('выплата в плюс плательщику и минус получателю — конвенция знака как у плательщика расхода', () => {
       const state = buildState()
       state.payments.push({
         id: 'v1',
@@ -269,10 +295,8 @@ describe('операция «балансы» (гроссбух)', () => {
         currencyCode: 'RUB',
       })
       const balances = byId(computeBalances(state))
-      expect(balances.get('p1')).toBe(50000)
-      expect(balances.get('p2')).toBe(-50000)
-      expect(balances.get('p3')).toBe(0)
-      expect(balances.get('p4')).toBe(0)
+      expect(balances.get('p1')).toBe(-50000)
+      expect(balances.get('p2')).toBe(50000)
       expectZeroSum(computeBalances(state))
     })
 
@@ -285,13 +309,13 @@ describe('операция «балансы» (гроссбух)', () => {
         amount: 10000,
         currencyCode: 'USD',
       })
-      expect(byId(computeBalances(state)).get('p1')).toBe(-913000)
-      expect(byId(computeBalances(state)).get('p2')).toBe(913000)
+      expect(byId(computeBalances(state)).get('p1')).toBe(913000)
+      expect(byId(computeBalances(state)).get('p2')).toBe(-913000)
 
       const usd = state.currencies.find((c) => c.code === 'USD')!
       usd.rate = { num: 92, den: 1 }
-      expect(byId(computeBalances(state)).get('p1')).toBe(-920000)
-      expect(byId(computeBalances(state)).get('p2')).toBe(920000)
+      expect(byId(computeBalances(state)).get('p1')).toBe(920000)
+      expect(byId(computeBalances(state)).get('p2')).toBe(-920000)
       expectZeroSum(computeBalances(state))
     })
   })

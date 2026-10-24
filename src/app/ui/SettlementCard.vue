@@ -5,7 +5,7 @@ import { computeBalances, settle } from '../../core'
 import { formatMinor } from './format'
 
 // Секция «Сведение» — итоги поездки из тикета 11: балансы участников и минимальные
-// переводы. Сечение — производная величина (ADR 0010): computeBalances → settle
+// переводы. Сведение — производная величина (ADR 0010): computeBalances → settle
 // на каждом изменении стейта, ничего не хранится и не закрывается руками. Компонент
 // денег не считает — только вызовы ядра, сортировка для показа и форматирование.
 
@@ -39,16 +39,20 @@ function describeBalance(amount: number): BalanceRow['label'] {
 
 // Порядок показа: по модулю баланса по убыванию, при равенстве — порядок участников
 // поездки (тот же тай-брейк, что и в сведении ядра); нулевые — в конце.
-const balanceRows = computed<BalanceRow[]>(() =>
-  balances.value
+const balanceRows = computed<BalanceRow[]>(() => {
+  // Стыковка участника с записью баланса — по participantId через Map, как в
+  // transferRows ниже: computeBalances даёт запись на каждого участника, поэтому
+  // поиск всегда находит (порядок записей ядра здесь не используется).
+  const byId = new Map(props.trip.participants.map((p) => [p.id, p]))
+  return balances.value
     .map((entry, order) => ({
-      participant: props.trip.participants[order], // записи балансов идут в порядке участников
+      participant: byId.get(entry.participantId)!,
       amount: entry.amount,
       order,
       label: describeBalance(entry.amount),
     }))
-    .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount) || a.order - b.order),
-)
+    .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount) || a.order - b.order)
+})
 
 const toneClass = {
   credit: 'text-emerald-600 dark:text-emerald-400',
